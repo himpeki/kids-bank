@@ -268,24 +268,45 @@
     showTab(location.hash.slice(1) || "home");
 
     // ---------- ダッシュボード ----------
+    // アバター・レベル変更後にも再描画できるよう、残高はキャッシュを持って描き直す
     const kidCardsEl = document.getElementById("kid-cards");
-    kidCardsEl.innerHTML = children()
-      .map(([id, m]) => `
-        <div class="card kid-card" id="kid-${id}">
-          <span class="avatar">${avatarHtml(id)}</span>
-          <div><div class="name">${esc(m.name)}</div><div class="muted">Lv.${m.level ?? 1}</div></div>
-          <div class="balances"><div class="yen">--円</div><div class="pt">--pt</div></div>
-        </div>`)
-      .join("") || '<p class="muted">子どもメンバーがいません(設定タブから追加)</p>';
-    for (const [id] of children()) {
-      onSnapshot(walletRef(id), (snap) => {
-        if (!snap.exists()) return;
-        const w = snap.data();
-        const el = document.getElementById(`kid-${id}`);
-        el.querySelector(".yen").textContent = `${w.yen.toLocaleString("ja-JP")}円`;
-        el.querySelector(".pt").textContent = `${w.pt.toLocaleString("ja-JP")}pt`;
-      });
+    const kidWallets = new Map();
+    const walletSubscribed = new Set();
+
+    function renderKidCards() {
+      kidCardsEl.innerHTML = children()
+        .map(([id, m]) => {
+          const w = kidWallets.get(id);
+          return `
+          <div class="card kid-card" id="kid-${id}">
+            <span class="avatar">${avatarHtml(id)}</span>
+            <div><div class="name">${esc(m.name)}</div><div class="muted">Lv.${m.level ?? 1}</div></div>
+            <div class="balances">
+              <div class="yen">${w ? `${w.yen.toLocaleString("ja-JP")}円` : "--円"}</div>
+              <div class="pt">${w ? `${w.pt.toLocaleString("ja-JP")}pt` : "--pt"}</div>
+            </div>
+          </div>`;
+        })
+        .join("") || '<p class="muted">子どもメンバーがいません(設定タブから追加)</p>';
+      ensureWalletSubs();
     }
+
+    function ensureWalletSubs() {
+      for (const [id] of children()) {
+        if (walletSubscribed.has(id)) continue;
+        walletSubscribed.add(id);
+        onSnapshot(walletRef(id), (snap) => {
+          if (!snap.exists()) return;
+          const w = snap.data();
+          kidWallets.set(id, w);
+          const el = document.getElementById(`kid-${id}`);
+          if (!el) return;
+          el.querySelector(".yen").textContent = `${w.yen.toLocaleString("ja-JP")}円`;
+          el.querySelector(".pt").textContent = `${w.pt.toLocaleString("ja-JP")}pt`;
+        });
+      }
+    }
+    renderKidCards();
 
     // ---------- 承認(親のみ) ----------
     let questsCache = new Map();
@@ -790,6 +811,9 @@
             </div>
           </details>`;
         }).join("");
+
+      // きせかえ・レベル・メンバー追加の変更をダッシュボードにも反映
+      renderKidCards();
     }
 
     document.getElementById("member-admin-list").addEventListener("click", async (e) => {

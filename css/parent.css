@@ -1,5 +1,6 @@
 /* 親モード: シンプルな管理画面 */
 body.parent-mode { background: #f6f4f0; padding-bottom: 84px; }
+body.parent-mode .tabbar a.active { color: var(--c-accent); }
 
 .parent-header {
   background: #fff;

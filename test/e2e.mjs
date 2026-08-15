@@ -133,6 +133,17 @@ try {
   );
   check("親が たろうのきせかえを設定(そらいろ+画像アバター+背景)", true);
 
+  // ============ 2.9 親: ダッシュボードへのアバター反映と下部タブバー ============
+  await pp.evaluate(() => { location.hash = "#home"; });
+  await pp.waitForFunction(
+    () => !!document.querySelector("#kid-cards .kid-card .avatar img"),
+    { timeout: 15000 },
+  );
+  const tabbarFixed = await pp.evaluate(
+    () => getComputedStyle(document.querySelector(".tabbar")).position === "fixed",
+  );
+  check("アバター変更がダッシュボードに反映+下部タブバー固定表示", tabbarFixed);
+
   // ============ 3. 子: カードURLで端末登録 ============
   const cctx = await browser.createBrowserContext();
   const cp = await cctx.newPage();
