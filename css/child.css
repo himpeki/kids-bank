@@ -4,6 +4,13 @@ body.child-mode {
   --bg1: #fff3e6;
   --bg2: #fff8f0;
   --c-primary-light: #ffb3c8;
+  /* 青固定だった要素もテーマに追従させる(var()経由なので各テーマの
+     --c-primary / --c-primary-dark の上書きが自動で波及する) */
+  --c-accent: var(--c-primary-dark);
+  --card-yen-1: var(--c-primary-dark);
+  --card-yen-2: var(--c-primary);
+  --chart-yen: var(--c-primary-dark);
+  --chart-pt: var(--c-primary);
   background: linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 30%);
   padding-bottom: 84px; /* 下部タブぶん */
 }
@@ -34,8 +41,8 @@ body.child-mode[data-theme="night"] {
   --bg1: #1d1626; --bg2: #0f0c14;
   --c-primary: #9b6cf0; --c-primary-light: #c9a6f2; --c-primary-dark: #b98af7;
   --card-yen-1: #37304a; --card-yen-2: #0b0812; /* お金カードも黒系に */
-  --chart-yen: #e8e2f5; /* ダーク上で見えるようグラフの円は明るいラベンダーグレー */
-  --chart-pt: #c9a6f2;
+  --chart-yen: #8d7bb5; /* ダーク上でも読める、落ち着いたラベンダーグレー */
+  --chart-pt: #b48ce8;
 }
 body.child-mode[data-theme="night"]:not(.custom-bg) {
   --c-sub: #b3a3d1;
@@ -91,7 +98,7 @@ body.child-mode[data-theme="night"] .member-pick button.selected {
   color: #fff;
   box-shadow: var(--shadow);
 }
-/* お金カードは基本は青系(区別のため)。テーマ側で --card-yen-* を上書きできる */
+/* お金カード=テーマ色の濃いめ、ポイントカード=明るめ。濃淡で2枚を区別する */
 .balance-card.yen {
   background: linear-gradient(135deg, var(--card-yen-1, #4d96ff), var(--card-yen-2, #6fb4ff));
 }

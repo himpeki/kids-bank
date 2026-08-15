@@ -168,6 +168,10 @@ try {
   await cp.waitForFunction(() => document.body.classList.contains("custom-bg"), { timeout: 15000 });
   await cp.waitForFunction(() => !!document.querySelector("#my-avatar img"), { timeout: 15000 });
   check("親が設定したきせかえ(テーマ・背景・画像アバター)が子に反映", true);
+  // お金カードが青固定ではなくテーマ色(そらいろの濃色 #2f7fd6)に追従している
+  const yenThemed = await cp.evaluate(() =>
+    getComputedStyle(document.querySelector(".balance-card.yen")).backgroundImage.includes("rgb(47, 127, 214)"));
+  check("お金カードがテーマ色に追従", yenThemed);
   await cp.screenshot({ path: `${SHOT_DIR}/child-theme.png` });
 
   // 券6枚が見えるか
