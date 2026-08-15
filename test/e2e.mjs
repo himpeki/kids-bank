@@ -390,10 +390,12 @@ try {
   await cp.evaluate(() => { location.hash = "#home"; });
   await sleep(500);
   const darkBg = await cp.evaluate(() => {
-    const c = document.querySelector(".card");
-    return getComputedStyle(c).backgroundColor === "rgb(47, 35, 68)"; // #2f2344
+    const card = getComputedStyle(document.querySelector(".card")).backgroundColor === "rgb(39, 32, 51)"; // #272033
+    const yenImg = getComputedStyle(document.querySelector(".balance-card.yen")).backgroundImage;
+    const yenBlack = yenImg.includes("rgb(11, 8, 18)") && !yenImg.includes("rgb(77, 150, 255)"); // 青→黒系
+    return card && yenBlack;
   });
-  check("くろむらさきテーマ(ダーク配色)が子画面に反映", darkBg);
+  check("くろむらさきテーマ(黒基調・お金カードも黒系)が子画面に反映", darkBg);
   await cp.screenshot({ path: `${SHOT_DIR}/child-night.png` });
 } catch (e) {
   failures++;

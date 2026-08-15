@@ -28,31 +28,45 @@ body.child-mode[data-theme="mint"] {
   --c-primary: #58cfa4; --c-primary-light: #9fe6c9; --c-primary-dark: #24996f;
 }
 
-/* くろむらさき: 黒×紫のシックなダークテーマ。
+/* くろむらさき: 黒×紫のシックなダークテーマ。青要素は黒系に置き換える。
    カスタム背景使用時はすりガラス(白)側の配色を優先するため :not(.custom-bg) で限定 */
 body.child-mode[data-theme="night"] {
-  --bg1: #241b33; --bg2: #191223;
+  --bg1: #1d1626; --bg2: #0f0c14;
   --c-primary: #9b6cf0; --c-primary-light: #c9a6f2; --c-primary-dark: #b98af7;
+  --card-yen-1: #37304a; --card-yen-2: #0b0812; /* お金カードも黒系に */
+  --chart-yen: #e8e2f5; /* ダーク上で見えるようグラフの円は明るいラベンダーグレー */
+  --chart-pt: #c9a6f2;
 }
 body.child-mode[data-theme="night"]:not(.custom-bg) {
   --c-sub: #b3a3d1;
-  --c-line: #453a5e;
+  --c-line: #3f3556;
   color: #f0e9fb;
 }
 body.child-mode[data-theme="night"]:not(.custom-bg) .card,
 body.child-mode[data-theme="night"]:not(.custom-bg) .ticket-card,
 body.child-mode[data-theme="night"]:not(.custom-bg) .quest-item {
-  background: #2f2344;
+  background: #272033;
   color: #f0e9fb;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 body.child-mode[data-theme="night"]:not(.custom-bg) .tabbar {
-  background: #241b33;
-  border-top-color: #453a5e;
+  background: #17121f;
+  border-top-color: #3f3556;
 }
 body.child-mode[data-theme="night"]:not(.custom-bg) .tabbar a { color: #8f7fb0; }
 body.child-mode[data-theme="night"]:not(.custom-bg) .tabbar a.active { color: #c9a6f2; }
-body.child-mode[data-theme="night"]:not(.custom-bg) .goal-bar-wrap { background: #453a5e; }
+body.child-mode[data-theme="night"]:not(.custom-bg) .goal-bar-wrap { background: #3f3556; }
+body.child-mode[data-theme="night"] .balance-card.yen { border: 1px solid #453a5e; }
+/* アクセント(青)のボタンも黒系+紫のふちに */
+body.child-mode[data-theme="night"] .btn-accent {
+  background: #17121f;
+  border: 2px solid #6b5a8e;
+}
+/* 送金相手などの選択枠も青ではなく紫で */
+body.child-mode[data-theme="night"] .member-pick button.selected {
+  border-color: var(--c-primary);
+  background: #f3ecff;
+}
 
 /* 白背景のボタン類はテーマに関わらず濃い文字色を保証(ダークテーマで文字が消えないように) */
 .member-pick button { color: var(--c-text); }
@@ -77,7 +91,10 @@ body.child-mode[data-theme="night"]:not(.custom-bg) .goal-bar-wrap { background:
   color: #fff;
   box-shadow: var(--shadow);
 }
-.balance-card.yen { background: linear-gradient(135deg, #4d96ff, #6fb4ff); } /* お金は常に青系(区別のため) */
+/* お金カードは基本は青系(区別のため)。テーマ側で --card-yen-* を上書きできる */
+.balance-card.yen {
+  background: linear-gradient(135deg, var(--card-yen-1, #4d96ff), var(--card-yen-2, #6fb4ff));
+}
 .balance-card.pt { background: linear-gradient(135deg, var(--c-primary), var(--c-primary-light)); }
 .balance-card .label { font-size: 13px; opacity: 0.9; }
 .balance-card .value { font-size: 30px; font-weight: 800; margin-top: 4px; }

@@ -1,31 +1,29 @@
 // 残高推移グラフ。取引に埋め込んだ balanceAfter を使うので全履歴のリプレイは不要。
 // 円とptはレートが違いすぎて1枚のグラフでは潰れるため、mode で片方ずつ表示する。
+// 線の色はテーマのCSS変数(--chart-yen / --chart-pt)を優先し、軸の文字色は
+// 現在の文字色に追従する(ダークテーマ対応)。
 // Chart.js は各ページで CDN の UMD 版を読み込み、グローバル Chart を使う。
 
 let chartInstance = null;
 
-const STYLES = {
-  yen: {
-    label: "おこづかい(えん)",
-    borderColor: "#4d96ff",
-    backgroundColor: "rgba(77,150,255,0.12)",
-  },
-  pt: {
-    label: "ポイント(pt)",
-    borderColor: "#ff8fab",
-    backgroundColor: "rgba(255,143,171,0.12)",
-  },
-};
+function themeVar(name, fallback) {
+  const v = getComputedStyle(document.body).getPropertyValue(name).trim();
+  return v || fallback;
+}
 
 /**
- * @param canvas   描画先 canvas
- * @param txns     この子が関わる取引(createdAt 昇順)
- * @param memberId 対象の子
+ * @param canvas    描画先 canvas
+ * @param txns      この子が関わる取引(createdAt 昇順)
+ * @param memberId  対象の子
  * @param wallet    現在の残高 {yen, pt}
  * @param mode      "yen" | "pt" 表示する通貨
  * @param appendNow 末尾に現在残高の点「いま」を足すか(今月表示のときだけ true)
  */
 export function drawBalanceChart(canvas, txns, memberId, wallet, mode = "yen", appendNow = true) {
+  const styles = {
+    yen: { label: "おこづかい(えん)", color: themeVar("--chart-yen", "#4d96ff") },
+    pt: { label: "ポイント(pt)", color: themeVar("--chart-pt", "#ff8fab") },
+  };
   const labels = [];
   const data = [];
 
@@ -43,6 +41,10 @@ export function drawBalanceChart(canvas, txns, memberId, wallet, mode = "yen", a
     data.push(wallet[mode] ?? 0);
   }
 
+  const s = styles[mode];
+  const textColor = getComputedStyle(canvas).color || "#3d3a4b";
+  const gridColor = "rgba(128, 128, 128, 0.22)";
+
   if (chartInstance) chartInstance.destroy();
   chartInstance = new Chart(canvas, {
     type: "line",
@@ -50,8 +52,10 @@ export function drawBalanceChart(canvas, txns, memberId, wallet, mode = "yen", a
       labels,
       datasets: [
         {
-          ...STYLES[mode],
+          label: s.label,
           data,
+          borderColor: s.color,
+          backgroundColor: `${s.color}22`,
           fill: true,
           tension: 0.25,
           spanGaps: true,
@@ -61,8 +65,11 @@ export function drawBalanceChart(canvas, txns, memberId, wallet, mode = "yen", a
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { labels: { font: { size: 14 } } } },
-      scales: { y: { beginAtZero: true } },
+      plugins: { legend: { labels: { font: { size: 14 }, color: textColor } } },
+      scales: {
+        y: { beginAtZero: true, ticks: { color: textColor }, grid: { color: gridColor } },
+        x: { ticks: { color: textColor }, grid: { color: gridColor } },
+      },
     },
   });
 }
