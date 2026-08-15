@@ -260,6 +260,17 @@ body.child-mode[data-theme="mint"] {
 /* ロックされたタブ・機能 */
 .locked { opacity: 0.45; pointer-events: none; }
 
+/* カスタム背景(家族限定画像)。::before の固定レイヤーに白いウォッシュを重ねて文字を読みやすく */
+body.child-mode.custom-bg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.9)),
+    var(--custom-bg-url) center / cover no-repeat;
+}
+
 /* きせかえ */
 .swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .swatch {
@@ -276,3 +287,11 @@ body.child-mode[data-theme="mint"] {
 .swatch:active { transform: scale(0.94); }
 .swatch.selected { border-color: var(--c-primary-dark); background: var(--bg1); }
 .swatch.avatar-swatch { font-size: 24px; padding: 6px 10px; }
+.swatch.img-swatch-btn { padding: 4px; }
+.img-swatch {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: block;
+}

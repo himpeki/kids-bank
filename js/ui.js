@@ -70,6 +70,40 @@ export async function withBusy(btn, fn) {
   }
 }
 
+/**
+ * 画像ファイルを縮小して data URL (JPEG) にする。
+ * Firestore の1ドキュメント上限(1MiB)に収まるよう、寸法と画質を段階的に落とす。
+ */
+export async function fileToResizedDataUrl(file, maxChars = 650000) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error("ファイルを読み込めませんでした"));
+    r.readAsDataURL(file);
+  });
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => reject(new Error("画像として読み込めませんでした"));
+    i.src = dataUrl;
+  });
+  for (const maxDim of [1200, 900, 600, 400]) {
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; // PNGの透過はJPEG化で白背景に
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    for (const q of [0.85, 0.75, 0.6, 0.45]) {
+      const out = canvas.toDataURL("image/jpeg", q);
+      if (out.length <= maxChars) return out;
+    }
+  }
+  throw new Error("画像が大きすぎて保存できませんでした");
+}
+
 /** 紙吹雪。durationMs のあいだ舞って自動で消える */
 export function confetti(durationMs = 2500) {
   const canvas = document.createElement("canvas");

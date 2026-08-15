@@ -173,6 +173,18 @@
         <button id="settings-save" class="btn btn-accent btn-sm" style="margin-top:10px">保存</button>
       </div>
       <div class="card">
+        <h3>🖼 カスタム画像(家族だけに表示)</h3>
+        <p class="muted">
+          ここに登録した画像は<b>認証済みの家族の端末にしか配信されません</b>。
+          子どもの「きせかえ」で背景・アバターに使えます。
+          著作物(キャラクター画像等)は家庭内利用の範囲でご利用ください。アップロード時に自動で縮小されます。
+        </p>
+        <div id="image-admin-list"></div>
+        <input type="file" id="image-file" accept="image/*" style="margin-top:8px">
+        <input type="text" id="image-name" placeholder="なまえ(例: きらきら)" maxlength="20" style="margin-top:8px">
+        <button id="image-upload-btn" class="btn btn-ok btn-sm" style="margin-top:8px">アップロード</button>
+      </div>
+      <div class="card">
         <h3>🖨 QRカード</h3>
         <p class="muted">子どもに渡す名刺サイズのカードを印刷できます。</p>
         <a class="btn btn-primary" href="./print.html">カード印刷ページへ</a>
@@ -200,7 +212,7 @@
       adultMoneyOp, sendMoneyGift, sendTicketGift, issueTicket,
       approveTicket, rejectTicket, approveQuest, rejectQuest, approveWithdraw,
     } from "./js/tx.js";
-    import { toast, confirmModal, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy } from "./js/ui.js";
+    import { toast, confirmModal, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy, fileToResizedDataUrl } from "./js/ui.js";
     import { TICKET_PRESETS, REWARD_PRESETS, ROLE_LABELS } from "./js/presets.js";
 
     const ident = await requireRole("parent", "giver");
@@ -226,6 +238,18 @@
     const AVATARS = ["🐣", "🐰", "🦊", "🐻", "🐱", "🐶"];
     const avatarOf = (id) => members.get(id)?.avatar || AVATARS[(members.get(id)?.sort ?? 0) % AVATARS.length];
 
+    // 家族限定のカスタム画像(アバター表示に使用)
+    let imagesCache = new Map();
+    async function loadImages() {
+      imagesCache = new Map();
+      (await getDocs(famCol("images"))).forEach((d) => imagesCache.set(d.id, d.data()));
+    }
+    await loadImages();
+    const avatarHtml = (id) => {
+      const img = members.get(id)?.avatarImageId ? imagesCache.get(members.get(id).avatarImageId) : null;
+      return img ? `<img class="avatar-img" src="${img.dataUrl}" alt="">` : avatarOf(id);
+    };
+
     try {
       const famSnap = await getDoc(famRef());
       document.getElementById("fam-name").textContent = famSnap.data()?.name ?? "";
@@ -248,7 +272,7 @@
     kidCardsEl.innerHTML = children()
       .map(([id, m]) => `
         <div class="card kid-card" id="kid-${id}">
-          <span class="avatar">${avatarOf(id)}</span>
+          <span class="avatar">${avatarHtml(id)}</span>
           <div><div class="name">${esc(m.name)}</div><div class="muted">Lv.${m.level ?? 1}</div></div>
           <div class="balances"><div class="yen">--円</div><div class="pt">--pt</div></div>
         </div>`)
@@ -674,6 +698,8 @@
 
     async function renderMemberAdmin() {
       await loadMembers();
+      await loadImages();
+      renderImageAdmin();
       const famId = getFamilyId();
       const inviteSnap = await getDocs(famCol("invites"));
       const invitesByMember = new Map();
@@ -715,7 +741,7 @@
             : "";
 
           return `<details class="member-detail">
-            <summary>${avatarOf(id)} ${esc(m.name)} <span class="muted">(${ROLE_LABELS[m.role]})</span></summary>
+            <summary>${avatarHtml(id)} ${esc(m.name)} <span class="muted">(${ROLE_LABELS[m.role]})</span></summary>
             ${unlockHtml}
             <div style="margin-top:8px"><b>招待リンク</b>${inviteHtml}
               <button class="btn btn-accent btn-sm new-invite" data-member="${id}" data-role="${m.role}">
@@ -804,6 +830,51 @@
         document.getElementById("new-member-name").value = "";
         toast("追加しました", "ok");
         renderMemberAdmin();
+      });
+    });
+
+    // ---------- カスタム画像管理(親のみ) ----------
+    function renderImageAdmin() {
+      document.getElementById("image-admin-list").innerHTML =
+        [...imagesCache.entries()].map(([id, im]) => `
+          <span class="image-thumb-item">
+            <img class="image-thumb" src="${im.dataUrl}" alt="">
+            <span class="muted">${esc(im.name)}</span>
+            <button class="btn btn-ghost btn-sm del-image" data-id="${id}">削除</button>
+          </span>`).join("") || '<p class="muted">まだ画像がありません</p>';
+    }
+    document.getElementById("image-admin-list").addEventListener("click", async (e) => {
+      if (!e.target.classList.contains("del-image")) return;
+      const ok = await confirmModal({
+        title: "画像を削除しますか?",
+        body: "この画像を使っている背景・アバターは初期表示に戻ります。",
+        okLabel: "削除",
+      });
+      if (!ok) return;
+      await deleteDoc(famDoc("images", e.target.dataset.id));
+      await loadImages();
+      renderImageAdmin();
+      toast("削除しました");
+    });
+    document.getElementById("image-upload-btn").addEventListener("click", async (e) => {
+      const file = document.getElementById("image-file").files[0];
+      if (!file) return toast("画像ファイルを選んでください", "error");
+      const name = document.getElementById("image-name").value.trim() || file.name.slice(0, 20);
+      await withBusy(e.target, async () => {
+        try {
+          const dataUrl = await fileToResizedDataUrl(file);
+          await setDoc(doc(famCol("images"), "img" + shortId()), {
+            name, dataUrl, uploadedByUid: ident.uid, createdAt: serverTimestamp(),
+          });
+          await loadImages();
+          renderImageAdmin();
+          document.getElementById("image-file").value = "";
+          document.getElementById("image-name").value = "";
+          toast("アップロードしました(家族だけに表示されます)", "ok");
+        } catch (err) {
+          console.error(err);
+          toast(`アップロードできませんでした: ${err.message}`, "error");
+        }
       });
     });
 

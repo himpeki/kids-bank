@@ -73,6 +73,10 @@
         <p class="muted">すきな いろと アバターを えらんでね。</p>
         <div id="theme-list" class="swatch-row"></div>
         <div id="avatar-list" class="swatch-row" style="margin-top:10px"></div>
+        <div id="bg-section" class="hidden">
+          <p class="muted" style="margin-top:12px">🖼 はいけい(かぞくのがぞう)</p>
+          <div id="bg-list" class="swatch-row"></div>
+        </div>
       </div>
     </section>
 
@@ -202,21 +206,53 @@
     const myMember = members.get(me) ?? { name: "?", level: 1, unlocks: {} };
     const mName = (id) => members.get(id)?.name ?? "?";
     const myAvatar = () => myMember.avatar || AVATAR_CHOICES[(myMember.sort ?? 0) % AVATAR_CHOICES.length];
-    document.getElementById("my-avatar").textContent = myAvatar();
     document.getElementById("my-name").textContent = myMember.name;
     document.getElementById("my-level").textContent = `Lv.${myMember.level ?? 1}`;
 
-    // ---------- きせかえ(テーマ・アバター) ----------
+    // 家族限定のカスタム画像(背景・アバターに使える)
+    const images = new Map();
+    (await getDocs(famCol("images"))).forEach((d) => images.set(d.id, d.data()));
+
+    // ---------- きせかえ(テーマ・アバター・背景) ----------
     document.body.dataset.theme = myMember.theme || "classic";
+
+    function renderHeaderAvatar() {
+      const img = myMember.avatarImageId ? images.get(myMember.avatarImageId) : null;
+      document.getElementById("my-avatar").innerHTML = img
+        ? `<img class="avatar-img" src="${img.dataUrl}" alt="">`
+        : esc(myAvatar());
+    }
+    function applyCustomBg() {
+      const img = myMember.bgImageId ? images.get(myMember.bgImageId) : null;
+      document.body.classList.toggle("custom-bg", !!img);
+      if (img) document.body.style.setProperty("--custom-bg-url", `url("${img.dataUrl}")`);
+    }
+    renderHeaderAvatar();
+    applyCustomBg();
 
     function renderThemePicker() {
       const cur = myMember.theme || "classic";
       document.getElementById("theme-list").innerHTML = Object.entries(THEMES).map(([key, t]) =>
         `<button type="button" class="swatch ${key === cur ? "selected" : ""}" data-theme="${key}">
           ${t.emoji} ${t.name}</button>`).join("");
-      const curAvatar = myAvatar();
-      document.getElementById("avatar-list").innerHTML = AVATAR_CHOICES.map((a) =>
-        `<button type="button" class="swatch avatar-swatch ${a === curAvatar ? "selected" : ""}" data-avatar="${a}">${a}</button>`).join("");
+
+      const curAvatar = myMember.avatarImageId ? null : myAvatar();
+      document.getElementById("avatar-list").innerHTML =
+        AVATAR_CHOICES.map((a) =>
+          `<button type="button" class="swatch avatar-swatch ${a === curAvatar ? "selected" : ""}" data-avatar="${a}">${a}</button>`).join("")
+        + [...images.entries()].map(([id, im]) =>
+          `<button type="button" class="swatch img-swatch-btn ${myMember.avatarImageId === id ? "selected" : ""}" data-avatar-img="${id}">
+            <img class="img-swatch" style="width:34px;height:34px;border-radius:50%" src="${im.dataUrl}" alt="${esc(im.name)}"></button>`).join("");
+
+      const hasImages = images.size > 0;
+      document.getElementById("bg-section").classList.toggle("hidden", !hasImages);
+      if (hasImages) {
+        document.getElementById("bg-list").innerHTML =
+          `<button type="button" class="swatch ${!myMember.bgImageId ? "selected" : ""}" data-bg="none">なし</button>`
+          + [...images.entries()].map(([id, im]) =>
+            `<button type="button" class="swatch img-swatch-btn ${myMember.bgImageId === id ? "selected" : ""}" data-bg="${id}">
+              <img class="img-swatch" src="${im.dataUrl}" alt="${esc(im.name)}"></button>`).join("");
+      }
     }
     renderThemePicker();
 
@@ -230,8 +266,17 @@
           await updateDoc(famDoc("members", me), { theme: myMember.theme });
         } else if (btn.dataset.avatar) {
           myMember.avatar = btn.dataset.avatar;
-          document.getElementById("my-avatar").textContent = myMember.avatar;
-          await updateDoc(famDoc("members", me), { avatar: myMember.avatar });
+          myMember.avatarImageId = null;
+          renderHeaderAvatar();
+          await updateDoc(famDoc("members", me), { avatar: myMember.avatar, avatarImageId: null });
+        } else if (btn.dataset.avatarImg) {
+          myMember.avatarImageId = btn.dataset.avatarImg;
+          renderHeaderAvatar();
+          await updateDoc(famDoc("members", me), { avatarImageId: myMember.avatarImageId });
+        } else if (btn.dataset.bg) {
+          myMember.bgImageId = btn.dataset.bg === "none" ? null : btn.dataset.bg;
+          applyCustomBg();
+          await updateDoc(famDoc("members", me), { bgImageId: myMember.bgImageId });
         }
         renderThemePicker();
       } catch (err) {

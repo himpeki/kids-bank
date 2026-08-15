@@ -116,14 +116,29 @@ service cloud.firestore {
         allow delete: if isParent();
       }
 
-      // 子は自分のきせかえ(テーマ・アバター)だけ変更できる
+      // 子は自分のきせかえ(テーマ・アバター・背景/アバター画像)だけ変更できる
       function childMemberSelfUpdate(memberId) {
         let a = request.resource.data;
         return isMember() && myRole() == 'child' && memberId == myMemberId()
-          && a.diff(resource.data).affectedKeys().hasOnly(['theme', 'avatar'])
+          && a.diff(resource.data).affectedKeys().hasOnly(['theme', 'avatar', 'bgImageId', 'avatarImageId'])
           && a.get('theme', 'classic') in ['classic', 'strawberry', 'sky', 'grape', 'pudding', 'mint']
           && a.get('avatar', '') is string
-          && a.get('avatar', '').size() <= 8;
+          && a.get('avatar', '').size() <= 8
+          && (a.get('bgImageId', null) == null
+              || (a.bgImageId is string && a.bgImageId.size() <= 40))
+          && (a.get('avatarImageId', null) == null
+              || (a.avatarImageId is string && a.avatarImageId.size() <= 40));
+      }
+
+      // ---------- カスタム画像(家族の認証済み端末にしか配信されない) ----------
+      match /images/{imageId} {
+        allow read: if isMember();
+        allow create, update: if isParent()
+          && request.resource.data.dataUrl is string
+          && request.resource.data.dataUrl.size() < 1000000
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 50;
+        allow delete: if isParent();
       }
 
       // ---------- 端末 ----------

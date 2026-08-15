@@ -73,3 +73,13 @@ body.parent-mode { background: #f6f4f0; padding-bottom: 84px; }
 
 details.member-detail { border-bottom: 1px solid var(--c-line); padding: 8px 0; }
 details.member-detail summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+
+.image-thumb-item { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; margin: 4px; }
+.image-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 2px solid var(--c-line);
+}
+.image-thumb-item .muted { font-size: 11px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

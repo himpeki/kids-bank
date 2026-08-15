@@ -633,6 +633,35 @@ describe("ごほうび交換(ポイントの使い道)", () => {
 });
 
 // ================================================================
+describe("カスタム画像(家族限定配信)", () => {
+  const imageDoc = { name: "テスト", dataUrl: "data:image/jpeg;base64,AAAA", uploadedByUid: UID.papa };
+
+  it("親はアップロードでき、子・giverはできない", async () => {
+    await assertSucceeds(setDoc(fdoc(as(UID.papa), "images", "img1"), {
+      ...imageDoc, createdAt: serverTimestamp(),
+    }));
+    await assertFails(setDoc(fdoc(as(UID.taro), "images", "img2"), {
+      ...imageDoc, createdAt: serverTimestamp(),
+    }));
+    await assertFails(setDoc(fdoc(as(UID.jiji), "images", "img3"), {
+      ...imageDoc, createdAt: serverTimestamp(),
+    }));
+  });
+
+  it("家族は読める・未登録UIDは読めない", async () => {
+    await raw((db) => setDoc(fdoc(db, "images", "img1"), { ...imageDoc, createdAt: Timestamp.now() }));
+    await assertSucceeds(getDoc(fdoc(as(UID.taro), "images", "img1")));
+    await assertFails(getDoc(fdoc(as(UID.stranger), "images", "img1")));
+  });
+
+  it("巨大すぎる画像データは拒否", async () => {
+    await assertFails(setDoc(fdoc(as(UID.papa), "images", "img-big"), {
+      name: "でかい", dataUrl: "x".repeat(1000000), uploadedByUid: UID.papa, createdAt: serverTimestamp(),
+    }));
+  });
+});
+
+// ================================================================
 describe("セットアップと設定", () => {
   it("正しいあいことばで新しい家族を作成できる", async () => {
     const db = as("uid-new");
@@ -677,5 +706,15 @@ describe("セットアップと設定", () => {
     await assertFails(updateDoc(fdoc(as(UID.taro), "members", "jiro"), { theme: "sky" }));
     // きせかえと同時にレベルを触るのは拒否
     await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { theme: "sky", level: 9 }));
+  });
+
+  it("子は自分の背景・アバター画像を設定/解除できる", async () => {
+    await assertSucceeds(updateDoc(fdoc(as(UID.taro), "members", "taro"), {
+      bgImageId: "img1", avatarImageId: "img1",
+    }));
+    await assertSucceeds(updateDoc(fdoc(as(UID.taro), "members", "taro"), {
+      bgImageId: null, avatarImageId: null,
+    }));
+    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "jiro"), { bgImageId: "img1" }));
   });
 });

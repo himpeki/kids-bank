@@ -95,6 +95,20 @@ try {
   );
   check("クエスト編集(みずやり 5pt → 7pt)", true);
 
+  // ============ 2.7 親: カスタム画像アップロード(家族限定) ============
+  await pp.evaluate(() => { location.hash = "#settings"; });
+  await pp.waitForSelector("#image-file", { timeout: 15000 });
+  const imgPath = fileURLToPath(new URL("../icons/icon-192.png", import.meta.url));
+  const fileInput = await pp.$("#image-file");
+  await fileInput.uploadFile(imgPath);
+  await pp.type("#image-name", "テストがぞう");
+  await pp.$eval("#image-upload-btn", (el) => el.click());
+  await pp.waitForFunction(
+    () => document.querySelectorAll("#image-admin-list img").length >= 1,
+    { timeout: 20000 },
+  );
+  check("親がカスタム画像をアップロード(自動縮小)", true);
+
   // ============ 3. 子: カードURLで端末登録 ============
   const cctx = await browser.createBrowserContext();
   const cp = await cctx.newPage();
@@ -120,6 +134,14 @@ try {
     { timeout: 10000 },
   );
   check("きせかえ(そらいろテーマ+アバター🦄)", true);
+
+  // カスタム画像: 背景とアバターに設定
+  await cp.waitForSelector('#bg-list [data-bg]:not([data-bg="none"])', { timeout: 15000 });
+  await cp.$eval('#bg-list [data-bg]:not([data-bg="none"])', (el) => el.click());
+  await cp.waitForFunction(() => document.body.classList.contains("custom-bg"), { timeout: 10000 });
+  await cp.$eval("#avatar-list [data-avatar-img]", (el) => el.click());
+  await cp.waitForFunction(() => !!document.querySelector("#my-avatar img"), { timeout: 10000 });
+  check("カスタム画像を背景+アバターに適用", true);
   await cp.screenshot({ path: `${SHOT_DIR}/child-theme.png` });
 
   // 券6枚が見えるか
