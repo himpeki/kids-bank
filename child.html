@@ -25,6 +25,14 @@
   <div class="container">
     <!-- ============ ホーム ============ -->
     <section id="tab-home">
+      <div id="pwa-tip" class="card hidden" style="display:flex;align-items:flex-start;gap:8px">
+        <div style="flex:1;font-size:13px">
+          📌 まいにち使うなら <b>「ホームがめんに追加」</b>すると アイコンから すぐひらけて べんりだよ!
+          <div class="muted" style="margin-top:2px">iPhone: 共有ボタン(□↑)→ホーム画面に追加 / Android: メニュー(⋮)→ホーム画面に追加</div>
+        </div>
+        <button id="pwa-tip-close" class="btn btn-ghost btn-sm" style="flex:0 0 auto">✕</button>
+      </div>
+
       <div class="balance-cards">
         <div class="balance-card yen">
           <div class="label">おこづかい</div>
@@ -263,6 +271,19 @@
     const settingsSnap = await getDoc(settingsRef());
     const bonusPt = settingsSnap.data()?.quizBonusPt ?? 5;
     const quiz = todaysQuiz(me, myMember.level ?? 1);
+
+    // ---------- 「ホーム画面に追加」のヒント ----------
+    // ホーム画面から起動していない時だけ表示。閉じたら記憶する
+    // (Safariがサイトデータを消すと再表示されるが、その時はまた案内が必要なのでちょうどよい)
+    const isStandalone =
+      matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+    if (!isStandalone && localStorage.getItem("okozukai.pwaTipDismissed") !== "1") {
+      document.getElementById("pwa-tip").classList.remove("hidden");
+    }
+    document.getElementById("pwa-tip-close").addEventListener("click", () => {
+      localStorage.setItem("okozukai.pwaTipDismissed", "1");
+      document.getElementById("pwa-tip").classList.add("hidden");
+    });
 
     // ---------- おさいふ(リアルタイム) ----------
     let wallet = { yen: 0, pt: 0 };

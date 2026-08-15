@@ -149,16 +149,19 @@ try {
   const cp = await cctx.newPage();
   wire(cp, "child");
   await cp.goto(invites[0], { waitUntil: "networkidle2" }); // たろうのカードURL
-  await cp.waitForSelector("#register-btn", { visible: true, timeout: 20000 });
-  await cp.click("#register-btn");
-  await cp.waitForSelector("#done:not(.hidden)", { timeout: 20000 });
-  await Promise.all([cp.waitForNavigation({ waitUntil: "networkidle2" }), cp.click("#go-btn")]);
+  // 子カードは確認タップなしで自動登録され、そのまま子ホームへ直行する
   await cp.waitForSelector("#bal-yen", { timeout: 20000 });
   await cp.waitForFunction(
     () => document.getElementById("my-name").textContent === "たろう",
     { timeout: 15000 },
   );
-  check("子端末の登録と子ホーム表示(たろう)", true);
+  check("カードURLからゼロタップで登録→子ホーム表示(たろう)", true);
+
+  // 「ホーム画面に追加」ヒントバナーが出て、閉じると消える
+  await cp.waitForSelector("#pwa-tip:not(.hidden)", { timeout: 10000 });
+  await cp.$eval("#pwa-tip-close", (el) => el.click());
+  const tipHidden = await cp.$eval("#pwa-tip", (el) => el.classList.contains("hidden"));
+  check("ホーム画面追加ヒントの表示と閉じる操作", tipHidden);
 
   // ============ 3.5 子: 親が設定したきせかえが反映されている ============
   await cp.waitForFunction(() => document.body.dataset.theme === "sky", { timeout: 15000 });

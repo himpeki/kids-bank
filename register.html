@@ -93,10 +93,26 @@
         if (mSnap.exists()) name = mSnap.data().name;
       } catch { /* 未登録端末は members を読めない場合がある */ }
 
+      destination = inv.role === "child" ? "./child.html" : "./parent.html";
+
+      // 子のカード(再利用可トークン)は確認なしで自動登録し、そのままホームへ。
+      // 親・祖父母用の1回限りリンクは誤って開いた瞬間に消費されないよう確認を挟む
+      if (inv.reusable) {
+        document.querySelector("#loading div:last-child").textContent = "とうろくちゅう...";
+        show("loading");
+        try {
+          await registerWithInvite(famId, token);
+          location.replace(destination);
+        } catch (err) {
+          console.error(err);
+          fail(err.message || "エラーがおきたよ。もういちど よみこんでね。");
+        }
+        return;
+      }
+
       document.getElementById("welcome-name").textContent = name ? `${name} さん、ようこそ!` : "ようこそ!";
       document.getElementById("welcome-name2").textContent = name || ROLE_LABELS[inv.role] || "メンバー";
       document.getElementById("welcome-role").textContent = `とうろくの しゅるい: ${ROLE_LABELS[inv.role] ?? inv.role}`;
-      destination = inv.role === "child" ? "./child.html" : "./parent.html";
       show("confirm");
     }
 
