@@ -668,4 +668,14 @@ describe("セットアップと設定", () => {
   it("子はメンバー(レベル・アンロック)を書けない", async () => {
     await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { level: 9 }));
   });
+
+  it("子は自分のきせかえ(テーマ・アバター)だけ変更できる", async () => {
+    await assertSucceeds(updateDoc(fdoc(as(UID.taro), "members", "taro"), { theme: "sky", avatar: "🦄" }));
+    // リストにないテーマは拒否
+    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { theme: "hacker" }));
+    // 他人のきせかえは拒否
+    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "jiro"), { theme: "sky" }));
+    // きせかえと同時にレベルを触るのは拒否
+    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { theme: "sky", level: 9 }));
+  });
 });

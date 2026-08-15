@@ -111,6 +111,17 @@ try {
   );
   check("子端末の登録と子ホーム表示(たろう)", true);
 
+  // ============ 3.5 子: きせかえ(テーマ・アバター) ============
+  await cp.$eval('#theme-list [data-theme="sky"]', (el) => el.click());
+  await cp.waitForFunction(() => document.body.dataset.theme === "sky", { timeout: 10000 });
+  await cp.$eval('#avatar-list [data-avatar="🦄"]', (el) => el.click());
+  await cp.waitForFunction(
+    () => document.getElementById("my-avatar").textContent === "🦄",
+    { timeout: 10000 },
+  );
+  check("きせかえ(そらいろテーマ+アバター🦄)", true);
+  await cp.screenshot({ path: `${SHOT_DIR}/child-theme.png` });
+
   // 券6枚が見えるか
   await cp.waitForFunction(
     () => document.querySelectorAll("#ticket-list .ticket-card").length >= 6,

@@ -108,9 +108,22 @@ service cloud.firestore {
       // ---------- メンバー ----------
       match /members/{memberId} {
         allow read: if isMember();
-        allow create, update: if isParent()
+        allow create: if isParent()
           && request.resource.data.role in ['parent', 'giver', 'child'];
+        allow update: if (isParent()
+            && request.resource.data.role in ['parent', 'giver', 'child'])
+          || childMemberSelfUpdate(memberId);
         allow delete: if isParent();
+      }
+
+      // 子は自分のきせかえ(テーマ・アバター)だけ変更できる
+      function childMemberSelfUpdate(memberId) {
+        let a = request.resource.data;
+        return isMember() && myRole() == 'child' && memberId == myMemberId()
+          && a.diff(resource.data).affectedKeys().hasOnly(['theme', 'avatar'])
+          && a.get('theme', 'classic') in ['classic', 'strawberry', 'sky', 'grape', 'pudding', 'mint']
+          && a.get('avatar', '') is string
+          && a.get('avatar', '').size() <= 8;
       }
 
       // ---------- 端末 ----------

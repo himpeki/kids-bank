@@ -1,7 +1,31 @@
 /* 子モード: たのしい見た目 */
+/* きせかえテーマ: data-theme 属性でパステル配色を切り替える(サンリオ風・オリジナル配色) */
 body.child-mode {
-  background: linear-gradient(180deg, #fff3e6 0%, #fff8f0 30%);
+  --bg1: #fff3e6;
+  --bg2: #fff8f0;
+  --c-primary-light: #ffb3c8;
+  background: linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 30%);
   padding-bottom: 84px; /* 下部タブぶん */
+}
+body.child-mode[data-theme="strawberry"] {
+  --bg1: #ffe9f1; --bg2: #fff5f9;
+  --c-primary: #ff86b3; --c-primary-light: #ffc0d8; --c-primary-dark: #e64c86;
+}
+body.child-mode[data-theme="sky"] {
+  --bg1: #e8f4ff; --bg2: #f5faff;
+  --c-primary: #6db9ff; --c-primary-light: #a8d5ff; --c-primary-dark: #2f7fd6;
+}
+body.child-mode[data-theme="grape"] {
+  --bg1: #f3edff; --bg2: #faf7ff;
+  --c-primary: #b48ce8; --c-primary-light: #d3bcf5; --c-primary-dark: #7e57c2;
+}
+body.child-mode[data-theme="pudding"] {
+  --bg1: #fff6dc; --bg2: #fffaef;
+  --c-primary: #ffc44d; --c-primary-light: #ffdf99; --c-primary-dark: #c8871a;
+}
+body.child-mode[data-theme="mint"] {
+  --bg1: #e7f9f0; --bg2: #f4fcf8;
+  --c-primary: #58cfa4; --c-primary-light: #9fe6c9; --c-primary-dark: #24996f;
 }
 
 .child-header {
@@ -24,8 +48,8 @@ body.child-mode {
   color: #fff;
   box-shadow: var(--shadow);
 }
-.balance-card.yen { background: linear-gradient(135deg, #4d96ff, #6fb4ff); }
-.balance-card.pt { background: linear-gradient(135deg, #ff8fab, #ffb3c8); }
+.balance-card.yen { background: linear-gradient(135deg, #4d96ff, #6fb4ff); } /* お金は常に青系(区別のため) */
+.balance-card.pt { background: linear-gradient(135deg, var(--c-primary), var(--c-primary-light)); }
 .balance-card .label { font-size: 13px; opacity: 0.9; }
 .balance-card .value { font-size: 30px; font-weight: 800; margin-top: 4px; }
 .balance-card .unit { font-size: 15px; }
@@ -235,3 +259,20 @@ body.child-mode {
 
 /* ロックされたタブ・機能 */
 .locked { opacity: 0.45; pointer-events: none; }
+
+/* きせかえ */
+.swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch {
+  border: 3px solid var(--c-line);
+  border-radius: 14px;
+  background: #fff;
+  padding: 8px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.08s;
+}
+.swatch:active { transform: scale(0.94); }
+.swatch.selected { border-color: var(--c-primary-dark); background: var(--bg1); }
+.swatch.avatar-swatch { font-size: 24px; padding: 6px 10px; }

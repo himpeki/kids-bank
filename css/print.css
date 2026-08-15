@@ -64,6 +64,13 @@
   height: 27mm !important;
 }
 
+/* 子どもが選んだきせかえテーマをカードにも反映 */
+.member-card.theme-strawberry { background: linear-gradient(135deg, #ffe4ee 0%, #fff5f9 60%, #ffeef5 100%); border-color: #ffb0cd; }
+.member-card.theme-sky { background: linear-gradient(135deg, #e3f2ff 0%, #f4faff 60%, #eaf5ff 100%); border-color: #a8d5ff; }
+.member-card.theme-grape { background: linear-gradient(135deg, #efe6ff 0%, #f9f6ff 60%, #f1eaff 100%); border-color: #cfb3f2; }
+.member-card.theme-pudding { background: linear-gradient(135deg, #fff2cf 0%, #fffaea 60%, #fff5da 100%); border-color: #ffd98a; }
+.member-card.theme-mint { background: linear-gradient(135deg, #ddf6ea 0%, #f2fcf7 60%, #e5f9f0 100%); border-color: #93e2c2; }
+
 @media print {
   body { background: #fff !important; }
   .no-print { display: none !important; }

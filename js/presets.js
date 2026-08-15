@@ -29,3 +29,15 @@ export const REWARD_PRESETS = [
 ];
 
 export const ROLE_LABELS = { parent: "おうちの人", giver: "おくる人(サポーター)", child: "こども" };
+
+// きせかえテーマ(子どもが自分で選べる)。キーは CSS の data-theme と対応
+export const THEMES = {
+  classic: { name: "ももいろ", emoji: "🍑" },
+  strawberry: { name: "いちごミルク", emoji: "🍓" },
+  sky: { name: "そらいろ", emoji: "☁️" },
+  grape: { name: "ゆめむらさき", emoji: "🎀" },
+  pudding: { name: "ぷりん", emoji: "🍮" },
+  mint: { name: "ちょこみんと", emoji: "🍫" },
+};
+
+export const AVATAR_CHOICES = ["🐣", "🐰", "🦊", "🐻", "🐱", "🐶", "🐼", "🦄", "🐸", "🐹", "🐧", "⭐"];

@@ -67,6 +67,13 @@
         <h3>📖 さいきんの きろく</h3>
         <div id="recent-txns"><p class="muted">まだ きろくがないよ</p></div>
       </div>
+
+      <div class="card" id="theme-card">
+        <h3>🎨 きせかえ</h3>
+        <p class="muted">すきな いろと アバターを えらんでね。</p>
+        <div id="theme-list" class="swatch-row"></div>
+        <div id="avatar-list" class="swatch-row" style="margin-top:10px"></div>
+      </div>
     </section>
 
     <!-- ============ けん ============ -->
@@ -183,6 +190,7 @@
     import { toast, confirmModal, confetti, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy } from "./js/ui.js";
     import { todaysQuiz } from "./js/quiz-pool.js";
     import { drawBalanceChart } from "./js/charts.js";
+    import { THEMES, AVATAR_CHOICES } from "./js/presets.js";
 
     const ident = await requireRole("child");
     const me = ident.memberId;
@@ -193,11 +201,44 @@
     memberSnaps.forEach((d) => members.set(d.id, d.data()));
     const myMember = members.get(me) ?? { name: "?", level: 1, unlocks: {} };
     const mName = (id) => members.get(id)?.name ?? "?";
-    const AVATARS = ["🐣", "🐰", "🦊", "🐻", "🐱", "🐶"];
-    document.getElementById("my-avatar").textContent =
-      myMember.avatar || AVATARS[(myMember.sort ?? 0) % AVATARS.length];
+    const myAvatar = () => myMember.avatar || AVATAR_CHOICES[(myMember.sort ?? 0) % AVATAR_CHOICES.length];
+    document.getElementById("my-avatar").textContent = myAvatar();
     document.getElementById("my-name").textContent = myMember.name;
     document.getElementById("my-level").textContent = `Lv.${myMember.level ?? 1}`;
+
+    // ---------- きせかえ(テーマ・アバター) ----------
+    document.body.dataset.theme = myMember.theme || "classic";
+
+    function renderThemePicker() {
+      const cur = myMember.theme || "classic";
+      document.getElementById("theme-list").innerHTML = Object.entries(THEMES).map(([key, t]) =>
+        `<button type="button" class="swatch ${key === cur ? "selected" : ""}" data-theme="${key}">
+          ${t.emoji} ${t.name}</button>`).join("");
+      const curAvatar = myAvatar();
+      document.getElementById("avatar-list").innerHTML = AVATAR_CHOICES.map((a) =>
+        `<button type="button" class="swatch avatar-swatch ${a === curAvatar ? "selected" : ""}" data-avatar="${a}">${a}</button>`).join("");
+    }
+    renderThemePicker();
+
+    document.getElementById("theme-card").addEventListener("click", async (e) => {
+      const btn = e.target.closest(".swatch");
+      if (!btn) return;
+      try {
+        if (btn.dataset.theme) {
+          myMember.theme = btn.dataset.theme;
+          document.body.dataset.theme = myMember.theme;
+          await updateDoc(famDoc("members", me), { theme: myMember.theme });
+        } else if (btn.dataset.avatar) {
+          myMember.avatar = btn.dataset.avatar;
+          document.getElementById("my-avatar").textContent = myMember.avatar;
+          await updateDoc(famDoc("members", me), { avatar: myMember.avatar });
+        }
+        renderThemePicker();
+      } catch (err) {
+        console.error(err);
+        toast("ほぞんできなかったよ", "error");
+      }
+    });
 
     // ---------- タブ切替 ----------
     const tabs = ["home", "tickets", "quests", "send", "log"];

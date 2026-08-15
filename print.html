@@ -57,7 +57,7 @@
       const m = members.get(inv.memberId) ?? { name: "?" };
       const url = `${base}?f=${famId}&t=${inv.token}`;
       const card = document.createElement("div");
-      card.className = "member-card";
+      card.className = `member-card theme-${m.theme || "classic"}`;
       card.innerHTML = `
         <div class="card-left">
           <div class="bank-name">🏦 おこづかいバンク メンバーズカード</div>
