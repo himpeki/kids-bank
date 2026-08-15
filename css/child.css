@@ -260,8 +260,10 @@ body.child-mode[data-theme="mint"] {
 /* ロックされたタブ・機能 */
 .locked { opacity: 0.45; pointer-events: none; }
 
-/* カスタム背景(家族限定画像)。::before の固定レイヤーに薄い白ウォッシュを重ねて文字を読みやすく。
-   body 自身の背景は透明にしないと ::before(z-index:-1)が隠れるので注意 */
+/* カスタム背景(家族限定画像)。
+   - body 自身の背景は透明にしないと ::before(z-index:-1)が隠れるので注意
+   - 上部はほぼ素の壁紙が見える「壁紙ゾーン」、下に行くほど薄く白をかける
+   - カード類はすりガラス(backdrop-filter)にして、背景が透けつつ文字は読めるように */
 body.child-mode.custom-bg { background: transparent; }
 body.child-mode.custom-bg::before {
   content: "";
@@ -269,12 +271,65 @@ body.child-mode.custom-bg::before {
   inset: 0;
   z-index: -1;
   background:
-    linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.6)),
+    linear-gradient(
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(255, 255, 255, 0.32) 240px,
+      rgba(255, 255, 255, 0.42) 100%),
     var(--custom-bg-url) center / cover no-repeat;
 }
-/* 背景が透けて見えるよう、カードとタブを少しだけ半透明に */
-body.child-mode.custom-bg .card { background: rgba(255, 255, 255, 0.9); }
-body.child-mode.custom-bg .tabbar { background: rgba(255, 255, 255, 0.94); }
+
+/* ヘッダーを壁紙の上に浮かぶすりガラスのピルにして、上部に壁紙ゾーンを作る */
+body.child-mode.custom-bg .child-header {
+  margin: 112px auto 4px;
+  width: min(560px, calc(100% - 24px));
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  box-shadow: var(--shadow);
+}
+
+/* すりガラス非対応ブラウザ向けのフォールバック(やや白め) */
+body.child-mode.custom-bg .card,
+body.child-mode.custom-bg .ticket-card,
+body.child-mode.custom-bg .quest-item {
+  background: rgba(255, 255, 255, 0.88);
+}
+body.child-mode.custom-bg .tabbar { background: rgba(255, 255, 255, 0.92); }
+
+/* カード外の見出し・説明文は小さな半透明チップに乗せて読みやすく */
+body.child-mode.custom-bg .container > section > h2 {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.68);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+body.child-mode.custom-bg .container > section > p.muted {
+  width: fit-content;
+  background: rgba(255, 255, 255, 0.62);
+  border-radius: 10px;
+  padding: 4px 10px;
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  body.child-mode.custom-bg .card,
+  body.child-mode.custom-bg .ticket-card,
+  body.child-mode.custom-bg .quest-item,
+  body.child-mode.custom-bg .child-header {
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(12px) saturate(1.15);
+    -webkit-backdrop-filter: blur(12px) saturate(1.15);
+  }
+  body.child-mode.custom-bg .tabbar {
+    background: rgba(255, 255, 255, 0.68);
+    backdrop-filter: blur(14px) saturate(1.15);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  }
+  body.child-mode.custom-bg .container > section > h2,
+  body.child-mode.custom-bg .container > section > p.muted {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
 
 /* きせかえ */
 .swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }

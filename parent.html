@@ -696,7 +696,15 @@
       invest: "📈 もぎとうし(将来機能)",
     };
 
-    async function renderMemberAdmin() {
+    // 再描画は直列化する(アップロード直後の再描画ときせかえ変更の再描画が
+    // 競合すると、古いデータの描画が新しい描画を上書きしてしまうため)
+    let memberAdminQueue = Promise.resolve();
+    function renderMemberAdmin() {
+      memberAdminQueue = memberAdminQueue.then(() => renderMemberAdminInner()).catch(console.error);
+      return memberAdminQueue;
+    }
+
+    async function renderMemberAdminInner() {
       await loadMembers();
       await loadImages();
       renderImageAdmin();

@@ -110,18 +110,22 @@ try {
   check("親がカスタム画像をアップロード(自動縮小)", true);
 
   // ============ 2.8 親: たろうのきせかえを設定(テーマ・アバター画像・背景) ============
+  await sleep(800); // アップロード後の再描画が落ち着くのを待つ
   await pp.waitForSelector('#member-admin-list details[data-mrole="child"]', { timeout: 15000 });
   await pp.$$eval('#member-admin-list details[data-mrole="child"]', (ds) => { ds[0].open = true; });
+  await pp.waitForSelector('#member-admin-list details[data-mrole="child"] .ks-theme[data-theme="sky"]', { timeout: 15000 });
   await pp.$eval('#member-admin-list details[data-mrole="child"] .ks-theme[data-theme="sky"]', (el) => el.click());
   await pp.waitForFunction(
     () => !!document.querySelector('#member-admin-list .ks-theme[data-theme="sky"].selected'),
     { timeout: 15000 },
   );
+  await pp.waitForSelector('#member-admin-list details[data-mrole="child"] .ks-avatar-img', { timeout: 15000 });
   await pp.$eval('#member-admin-list details[data-mrole="child"] .ks-avatar-img', (el) => el.click());
   await pp.waitForFunction(
     () => !!document.querySelector("#member-admin-list .ks-avatar-img.selected"),
     { timeout: 15000 },
   );
+  await pp.waitForSelector('#member-admin-list details[data-mrole="child"] .ks-bg:not([data-img="none"])', { timeout: 15000 });
   await pp.$eval('#member-admin-list details[data-mrole="child"] .ks-bg:not([data-img="none"])', (el) => el.click());
   await pp.waitForFunction(
     () => !!document.querySelector('#member-admin-list .ks-bg.selected:not([data-img="none"])'),
