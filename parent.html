@@ -211,6 +211,7 @@
     import {
       adultMoneyOp, sendMoneyGift, sendTicketGift, issueTicket,
       approveTicket, rejectTicket, approveQuest, rejectQuest, approveWithdraw,
+      approveTransfer, approveTicketTransfer,
     } from "./js/tx.js";
     import { toast, confirmModal, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy, fileToResizedDataUrl } from "./js/ui.js";
     import { TICKET_PRESETS, REWARD_PRESETS, ROLE_LABELS, THEMES, AVATAR_CHOICES } from "./js/presets.js";
@@ -356,6 +357,18 @@
           emoji = "👛";
           title = `${(a.amount ?? 0).toLocaleString("ja-JP")}円 をひきだしたい`;
           sub = "現金にかえるお願い(承認したら手渡しを)";
+        } else if (a.kind === "transfer") {
+          emoji = "💸";
+          title = `${mName(a.toMemberId)} に ${fmtAmount(a.currency, a.amount)} おくりたい`;
+          sub = a.message ? `メモ: ${a.message}` : "きょうだい送金";
+        } else if (a.kind === "ticketTransfer") {
+          const t = (await getDoc(famDoc("tickets", a.refId))).data();
+          const want = a.wantTicketId ? (await getDoc(famDoc("tickets", a.wantTicketId))).data() : null;
+          emoji = "🔁";
+          title = want
+            ? `「${t?.title ?? "?"}」⇔「${want?.title ?? "?"}」を こうかんしたい`
+            : `「${t?.title ?? "?"}」を ${mName(a.toMemberId)} にあげたい`;
+          sub = `${mName(a.memberId)} → ${mName(a.toMemberId)} の券のやりとり`;
         } else {
           const t = (await getDoc(famDoc("tickets", a.refId))).data();
           emoji = t?.emoji ?? "🎫";
@@ -364,6 +377,8 @@
         }
         return `<div class="approval-item" data-id="${a.id}" data-kind="${a.kind}" data-ref="${a.refId}"
                      data-member="${a.memberId}" data-amount="${a.amount ?? ""}"
+                     data-to="${a.toMemberId ?? ""}" data-currency="${a.currency ?? ""}"
+                     data-message="${esc(a.message ?? "")}" data-want="${a.wantTicketId ?? ""}"
                      data-points="${a._points ?? ""}" data-title="${esc(a._title ?? "")}">
           <span class="a-emoji">${emoji}</span>
           <div class="a-main"><div class="a-title">${esc(title)}</div>
@@ -378,12 +393,14 @@
     document.getElementById("approval-box").addEventListener("click", async (e) => {
       const item = e.target.closest(".approval-item");
       if (!item) return;
-      const { id, kind, ref, member, points, title, amount } = item.dataset;
+      const { id, kind, ref, member, points, title, amount, to, currency, message, want } = item.dataset;
       if (e.target.classList.contains("approve-btn")) {
         await withBusy(e.target, async () => {
           try {
             if (kind === "ticket") await approveTicket({ approvalId: id, ticketId: ref });
             else if (kind === "withdraw") await approveWithdraw({ approvalId: id, memberId: member, amount: parseInt(amount, 10) });
+            else if (kind === "transfer") await approveTransfer({ approvalId: id, fromMemberId: member, toMemberId: to, currency, amount: parseInt(amount, 10), message });
+            else if (kind === "ticketTransfer") await approveTicketTransfer({ approvalId: id, ticketId: ref, fromMemberId: member, toMemberId: to, wantTicketId: want || null });
             else await approveQuest({ approvalId: id, memberId: member, points: parseInt(points, 10), questTitle: title });
             toast(kind === "withdraw" ? "承認しました。現金を渡してあげてください 👛" : "承認しました", "ok");
           } catch (err) {
@@ -393,10 +410,11 @@
         });
       }
       if (e.target.classList.contains("reject-btn")) {
-        const ok = await confirmModal({ title: "却下しますか?", body: "子どもの画面では「けんが もどったよ」となります。", okLabel: "却下する" });
+        const ok = await confirmModal({ title: "却下しますか?", body: "却下すると子どもの画面に「おへんじ」として表示されます。", okLabel: "却下する" });
         if (!ok) return;
         await withBusy(e.target, async () => {
-          if (kind === "ticket") await rejectTicket({ approvalId: id, ticketId: ref, note: "" });
+          // 券がらみは券を未使用に戻す。却下は子の画面に「おへんじ」として表示される
+          if (kind === "ticket" || kind === "ticketTransfer") await rejectTicket({ approvalId: id, ticketId: ref, note: "" });
           else await rejectQuest({ approvalId: id, note: "" });
           toast("却下しました");
         });

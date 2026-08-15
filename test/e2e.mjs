@@ -197,6 +197,26 @@ try {
   await cp.waitForSelector("#ticket-list .ticket-card.used", { timeout: 15000 });
   check("親の承認 → 子の券が「つかったよ」に", true);
 
+  // ============ 4.5 子: けんを きょうだいへ譲渡 → 親承認 ============
+  await cp.evaluate(() => { location.hash = "#tickets"; });
+  await sleep(300);
+  await cp.$eval("#ticket-list .swap-btn", (el) => el.click());
+  await cp.waitForSelector(".modal-backdrop #tt-ok", { timeout: 10000 });
+  await cp.$eval("#tt-ok", (el) => el.click()); // 相手=じろう(唯一)・あげる(既定)
+  await cp.waitForFunction(
+    () => document.querySelectorAll("#ticket-list .ticket-card.pending").length === 1,
+    { timeout: 15000 },
+  );
+  check("けんの譲渡リクエスト(承認待ち化)", true);
+  await pp.waitForSelector(".approval-item .approve-btn", { timeout: 15000 });
+  await sleep(300);
+  await pp.$eval(".approval-item .approve-btn", (el) => el.click());
+  await cp.waitForFunction(
+    () => document.querySelectorAll("#ticket-list .ticket-card").length === 5,
+    { timeout: 15000 },
+  );
+  check("親の承認 → けんが じろうへ移動(たろうは5枚に)", true);
+
   // ============ 5. 親: サプライズギフト(500円) → 子: 開封 ============
   await pp.evaluate(() => { location.hash = "#gift"; });
   await sleep(300);
@@ -216,19 +236,28 @@ try {
   );
   check("ギフト開封演出 → 残高500円", true);
 
-  // ============ 6. 子: 兄弟送金(じろうへ100円) ============
+  // ============ 6. 子: 兄弟送金リクエスト(じろうへ100円・メモ付き) → 親承認 ============
   await cp.evaluate(() => { location.hash = "#send"; });
   await sleep(300);
   await cp.type("#send-amount", "100");
-  await cp.type("#send-message", "はんぶんこ!");
+  await cp.type("#send-message", "おやつ代");
   await cp.click("#send-btn");
   await cp.waitForSelector('.modal [data-act="ok"]');
   await cp.click('.modal [data-act="ok"]');
   await cp.waitForFunction(
+    () => document.querySelectorAll("#send-pending .t-cancel-btn").length === 1,
+    { timeout: 15000 },
+  );
+  check("送金リクエスト(おやつ代)が承認待ちに", true);
+  await pp.evaluate(() => { location.hash = "#approvals"; });
+  await pp.waitForSelector(".approval-item .approve-btn", { timeout: 15000 });
+  await sleep(300);
+  await pp.$eval(".approval-item .approve-btn", (el) => el.click());
+  await cp.waitForFunction(
     () => document.getElementById("bal-yen").textContent === "400",
     { timeout: 15000 },
   );
-  check("兄弟間送金(100円)→ 残高400円", true);
+  check("親の承認 → 送金成立(残高400円)", true);
 
   // ============ 7. 子: クエスト報告 → 親: 承認(+10pt) ============
   await cp.evaluate(() => { location.hash = "#quests"; });
@@ -324,6 +353,22 @@ try {
     { timeout: 15000 },
   );
   check("親の承認 → 残高400円→250円(現金手渡し)", true);
+
+  // ============ 8.3 却下 → 子に「おへんじ」演出が出る ============
+  await cp.type("#withdraw-amount", "50");
+  await cp.$eval("#withdraw-btn", (el) => el.click());
+  await cp.waitForSelector('.modal [data-act="ok"]');
+  await cp.click('.modal [data-act="ok"]');
+  await pp.waitForSelector(".approval-item .reject-btn", { timeout: 15000 });
+  await sleep(300);
+  await pp.$eval(".approval-item .reject-btn", (el) => el.click());
+  await pp.waitForSelector('.modal [data-act="ok"]');
+  await pp.click('.modal [data-act="ok"]');
+  await cp.waitForSelector("#reject-overlay #reject-ok", { timeout: 15000 });
+  await cp.screenshot({ path: `${SHOT_DIR}/child-reject.png` });
+  await cp.$eval("#reject-ok", (el) => el.click());
+  await cp.waitForFunction(() => !document.querySelector("#reject-overlay"), { timeout: 10000 });
+  check("却下が子に「おへんじ」として表示 → わかったで既読", true);
 
   // ============ 8.5 子: きろくタブ(月ごとの通帳+グラフ) ============
   await cp.evaluate(() => { location.hash = "#log"; });

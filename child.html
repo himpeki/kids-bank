@@ -102,7 +102,8 @@
     <!-- ============ おくる ============ -->
     <section id="tab-send" class="hidden">
       <h2>💸 おくる</h2>
-      <p class="muted">きょうだいに おかねやポイントを おくれるよ。</p>
+      <p class="muted">きょうだいに おかねやポイントを おくれるよ。おうちの人がOKしたら とどくよ。</p>
+      <div id="send-pending"></div>
       <div class="card">
         <label>だれに おくる?</label>
         <div class="member-pick" id="send-to"></div>
@@ -113,10 +114,10 @@
         </div>
         <label>いくら おくる?</label>
         <input type="number" id="send-amount" class="amount-input" placeholder="0" inputmode="numeric" min="1">
-        <label>メッセージ(なくてもOK)</label>
-        <input type="text" id="send-message" placeholder="いつもありがとう!" maxlength="100">
+        <label>メモ(なんの お金?)</label>
+        <input type="text" id="send-message" placeholder="おかしだい" maxlength="100">
         <div style="margin-top:14px">
-          <button id="send-btn" class="btn btn-primary btn-big">おくる!</button>
+          <button id="send-btn" class="btn btn-primary btn-big">おねがいする!</button>
         </div>
       </div>
     </section>
@@ -185,8 +186,9 @@
       Timestamp, updateDoc, serverTimestamp, famCol, famDoc, walletRef, settingsRef, shortId,
     } from "./js/db.js";
     import {
-      transfer, requestTicketUse, cancelTicketRequest, reportQuest,
+      requestTransfer, requestTicketUse, cancelTicketRequest, reportQuest,
       cancelQuestRequest, claimQuizReward, requestWithdraw, redeemReward,
+      requestTicketTransfer, ackRejection,
     } from "./js/tx.js";
     import { applyPendingInterest } from "./js/interest.js";
     import { toast, confirmModal, confetti, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy } from "./js/ui.js";
@@ -303,8 +305,8 @@
       const isOut = t.fromMemberId === me;
       const map = {
         transfer: isOut
-          ? { emoji: "💸", label: `${mName(t.toMemberId)} に おくった` }
-          : { emoji: "💝", label: `${mName(t.fromMemberId)} から もらった` },
+          ? { emoji: "💸", label: `${mName(t.toMemberId)}に おくった${t.message ? `(${t.message})` : ""}` }
+          : { emoji: "💝", label: `${mName(t.fromMemberId)}から もらった${t.message ? `(${t.message})` : ""}` },
         grant: { emoji: "🏦", label: "おこづかいが 入ったよ" },
         gift: { emoji: "🎁", label: "プレゼントが とどいたよ" },
         withdraw: { emoji: "👛", label: "おかねを うけとった(ひきだし)" },
@@ -319,10 +321,9 @@
     }
     function txnHtml(t) {
       const d = describeTxn(t);
-      const msg = t.type === "transfer" && t.message ? `<div class="muted">💬 ${esc(t.message)}</div>` : "";
       return `<div class="txn-item">
         <span class="t-emoji">${d.emoji}</span>
-        <div class="t-main">${esc(d.label)}${msg}<div class="t-date">${fmtDate(t.createdAt)}</div></div>
+        <div class="t-main">${esc(d.label)}<div class="t-date">${fmtDate(t.createdAt)}</div></div>
         <span class="t-amount ${d.isOut ? "minus" : "plus"}">${d.sign}${fmtAmount(t.currency, t.amount)}</span>
       </div>`;
     }
@@ -339,6 +340,7 @@
     );
 
     // ---------- ギフトけん ----------
+    let myTickets = [];
     onSnapshot(
       query(famCol("tickets"), where("memberId", "==", me)),
       (snap) => {
@@ -346,6 +348,7 @@
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((t) => t.status !== "void")
           .sort((a, b) => (a.status === "used") - (b.status === "used") || (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+        myTickets = docs;
         const el = document.getElementById("ticket-list");
         if (!docs.length) {
           el.innerHTML = '<p class="muted">まだ けんがないよ</p>';
@@ -357,6 +360,7 @@
             <div class="title">${esc(t.title)}</div>
             <div class="desc">${esc(t.desc ?? "")}</div>
             ${t.status === "unused" ? '<button class="btn btn-primary btn-sm use-btn">つかう</button>' : ""}
+            ${t.status === "unused" ? '<button class="btn btn-ghost btn-sm swap-btn" style="margin-top:4px">🔁 きょうだいへ</button>' : ""}
             ${t.status === "pending" ? '<div class="muted">おへんじまち…</div><button class="btn btn-ghost btn-sm cancel-btn">やっぱりやめる</button>' : ""}
           </div>`).join("");
         renderPendingInfo();
@@ -382,7 +386,97 @@
           cancelTicketRequest({ ticketId: card.dataset.id, approvalId: card.dataset.approval }));
         toast("とりけしたよ");
       }
+      if (e.target.classList.contains("swap-btn")) {
+        const t = myTickets.find((x) => x.id === card.dataset.id);
+        if (t) openTicketTransferModal(t);
+      }
     });
+
+    // ---------- 券の譲渡・交換モーダル ----------
+    async function openTicketTransferModal(ticket) {
+      if (!siblings.length) return toast("きょうだいが いないよ", "error");
+      let selSib = siblings[0][0];
+      let mode = "give";
+      let wantId = null;
+
+      const wrap = document.createElement("div");
+      wrap.className = "modal-backdrop";
+      wrap.innerHTML = `
+        <div class="modal">
+          <h3>🔁 「${esc(ticket.title)}」を きょうだいへ</h3>
+          <div class="modal-body">
+            <b>だれに?</b>
+            <div class="swatch-row" style="margin:6px 0 10px">
+              ${siblings.map(([id, m], i) =>
+                `<button type="button" class="swatch tt-sib ${i === 0 ? "selected" : ""}" data-id="${id}">${esc(m.name)}</button>`).join("")}
+            </div>
+            <b>どうする?</b>
+            <div class="swatch-row" style="margin:6px 0 10px">
+              <button type="button" class="swatch tt-mode selected" data-mode="give">🎁 あげる</button>
+              <button type="button" class="swatch tt-mode" data-mode="swap">🔁 こうかんする</button>
+            </div>
+            <div id="tt-want" class="hidden">
+              <b>どのけんと こうかんする?</b>
+              <div id="tt-want-list" class="swatch-row" style="margin:6px 0"></div>
+            </div>
+            <p class="muted">おうちの人がOKしたら せいりつするよ。</p>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" data-act="cancel">やめる</button>
+            <button class="btn btn-primary" id="tt-ok">おねがいする!</button>
+          </div>
+        </div>`;
+      document.body.appendChild(wrap);
+
+      async function loadWantList() {
+        const listEl = wrap.querySelector("#tt-want-list");
+        listEl.innerHTML = '<span class="muted">よみこみちゅう...</span>';
+        const snap = await getDocs(query(
+          famCol("tickets"), where("memberId", "==", selSib), where("status", "==", "unused")));
+        wantId = null;
+        listEl.innerHTML = snap.docs.map((d) => {
+          const t = d.data();
+          return `<button type="button" class="swatch tt-want-btn" data-id="${d.id}">${esc(t.emoji ?? "🎫")} ${esc(t.title)}</button>`;
+        }).join("") || '<span class="muted">こうかんできる けんが ないよ</span>';
+      }
+
+      wrap.addEventListener("click", async (e) => {
+        const btn = e.target.closest("button");
+        if (e.target === wrap || btn?.dataset.act === "cancel") return wrap.remove();
+        if (!btn) return;
+        if (btn.classList.contains("tt-sib")) {
+          selSib = btn.dataset.id;
+          wrap.querySelectorAll(".tt-sib").forEach((b) => b.classList.toggle("selected", b === btn));
+          if (mode === "swap") await loadWantList();
+        }
+        if (btn.classList.contains("tt-mode")) {
+          mode = btn.dataset.mode;
+          wrap.querySelectorAll(".tt-mode").forEach((b) => b.classList.toggle("selected", b === btn));
+          wrap.querySelector("#tt-want").classList.toggle("hidden", mode !== "swap");
+          if (mode === "swap") await loadWantList();
+        }
+        if (btn.classList.contains("tt-want-btn")) {
+          wantId = btn.dataset.id;
+          wrap.querySelectorAll(".tt-want-btn").forEach((b) => b.classList.toggle("selected", b === btn));
+        }
+        if (btn.id === "tt-ok") {
+          if (mode === "swap" && !wantId) return toast("こうかんする けんを えらんでね", "error");
+          await withBusy(btn, async () => {
+            try {
+              await requestTicketTransfer({
+                ticketId: ticket.id, memberId: me, toMemberId: selSib,
+                wantTicketId: mode === "swap" ? wantId : null,
+              });
+              wrap.remove();
+              toast("おうちの人に おねがいしたよ!", "ok");
+            } catch (err) {
+              console.error(err);
+              toast(err.message || "おねがいできなかったよ", "error");
+            }
+          });
+        }
+      });
+    }
 
     // ---------- 承認まちの表示(ホーム) ----------
     let myPendingApprovals = [];
@@ -393,6 +487,7 @@
         renderPendingInfo();
         renderQuestPending();
         renderWithdrawPending();
+        renderSendPending();
       },
     );
     function renderPendingInfo() {
@@ -542,25 +637,44 @@
       const message = document.getElementById("send-message").value.trim();
       if (!sendTo) return toast("おくるあいてが いないよ", "error");
       if (!Number.isInteger(amount) || amount <= 0) return toast("きんがくを 入れてね", "error");
+      if (!message) return toast("なんの お金か メモを書いてね(れい: おかしだい)", "error");
       if (wallet[sendCur] < amount) return toast("ざんだかが たりないよ", "error");
       const ok = await confirmModal({
-        title: "おくる?",
-        body: `<b>${esc(mName(sendTo))}</b> に <b>${fmtAmount(sendCur, amount)}</b> おくるよ。いいかな?`,
-        okLabel: "おくる!",
+        title: "おくる おねがいを する?",
+        body: `<b>${esc(mName(sendTo))}</b> に <b>${fmtAmount(sendCur, amount)}</b>(${esc(message)})<br>おうちの人がOKしたら とどくよ。`,
+        okLabel: "おねがいする!",
       });
       if (!ok) return;
       await withBusy(e.target, async () => {
         try {
-          await transfer({ fromMemberId: me, toMemberId: sendTo, currency: sendCur, amount, message });
-          confetti(1500);
-          toast(`${mName(sendTo)} に おくったよ!`, "ok");
+          await requestTransfer({ fromMemberId: me, toMemberId: sendTo, currency: sendCur, amount, message });
+          toast("おうちの人に おねがいしたよ!", "ok");
           document.getElementById("send-amount").value = "";
           document.getElementById("send-message").value = "";
         } catch (err) {
           console.error(err);
-          toast(err.message || "おくれなかったよ", "error");
+          toast(err.message || "おねがいできなかったよ", "error");
         }
       });
+    });
+
+    // 送金リクエストのおへんじまち表示
+    function renderSendPending() {
+      const mine = myPendingApprovals.filter((a) => a.kind === "transfer");
+      document.getElementById("send-pending").innerHTML = mine.length
+        ? `<div class="card"><b>⏳ おへんじまち</b>` + mine.map((a) => `
+            <div class="quest-item" style="box-shadow:none;margin:6px 0">
+              <span class="emoji">💸</span>
+              <span class="title">${esc(mName(a.toMemberId))}に ${fmtAmount(a.currency, a.amount)}(${esc(a.message ?? "")})</span>
+              <button class="btn btn-ghost btn-sm t-cancel-btn" data-id="${a.id}">とりけす</button>
+            </div>`).join("") + `</div>`
+        : "";
+    }
+    document.getElementById("send-pending").addEventListener("click", async (e) => {
+      if (e.target.classList.contains("t-cancel-btn")) {
+        await withBusy(e.target, () => cancelQuestRequest({ approvalId: e.target.dataset.id }));
+        toast("とりけしたよ");
+      }
     });
 
     // ---------- きろくタブ(月ごとの通帳) ----------
@@ -605,8 +719,8 @@
       document.getElementById("passbook-body").innerHTML = rows.map((t) => {
         const d = describeTxn(t);
         const mine = t.fromMemberId === me ? t.balanceAfter?.from : t.balanceAfter?.to;
-        // クエストはラベルにメモ(クエスト名)を含むので二重表示しない
-        const memo = t.message && t.type !== "quest"
+        // クエスト・送金はラベルにメモを含むので二重表示しない
+        const memo = t.message && !["quest", "transfer"].includes(t.type)
           ? `<div class="pb-memo">💬 ${esc(t.message)}</div>` : "";
         return `<tr>
           <td class="pb-date">${fmtDate(t.createdAt)}</td>
@@ -785,6 +899,65 @@
         overlay.remove();
         giftShowing = false;
         showNextGift();
+      });
+    }
+
+    // ---------- 却下のお知らせ(おうちの人からのおへんじ) ----------
+    const rejectQueue = [];
+    let rejectShowing = false;
+    onSnapshot(
+      query(famCol("approvals"),
+        where("memberId", "==", me),
+        where("status", "==", "rejected"),
+        where("seenAt", "==", null)),
+      (snap) => {
+        snap.docChanges().forEach((ch) => {
+          if (ch.type === "added") rejectQueue.push({ id: ch.doc.id, ...ch.doc.data() });
+        });
+        showNextRejection();
+      },
+    );
+
+    async function describeApproval(a) {
+      if (a.kind === "withdraw") return `${fmtYen(a.amount)}を おかねにかえる おねがい`;
+      if (a.kind === "transfer") return `${mName(a.toMemberId)}への ${fmtAmount(a.currency, a.amount)}の おくりもの`;
+      if (a.kind === "quest") {
+        const q = questById(a.refId) ?? (await getDoc(famDoc("quests", a.refId))).data();
+        return `おてつだい「${q?.title ?? "?"}」`;
+      }
+      const t = (await getDoc(famDoc("tickets", a.refId))).data();
+      if (a.kind === "ticketTransfer") return `けん「${t?.title ?? "?"}」を きょうだいへ おくる おねがい`;
+      return `けん「${t?.title ?? "?"}」を つかう おねがい`;
+    }
+
+    async function showNextRejection() {
+      if (rejectShowing || rejectQueue.length === 0) return;
+      rejectShowing = true;
+      const a = rejectQueue.shift();
+      let desc = "おねがい";
+      try {
+        desc = await describeApproval(a);
+      } catch (e) {
+        console.warn("describe rejection:", e);
+      }
+      const overlay = document.createElement("div");
+      overlay.className = "gift-overlay";
+      overlay.id = "reject-overlay";
+      overlay.innerHTML = `
+        <div style="font-size:72px">😢</div>
+        <div class="gift-from">おうちの人からの おへんじ</div>
+        <div class="gift-message">${esc(desc)}は<br>こんかいは みとめられなかったよ。</div>
+        <button class="btn btn-ghost btn-big" id="reject-ok" style="margin-top:16px;max-width:300px">わかった</button>`;
+      document.body.appendChild(overlay);
+      overlay.querySelector("#reject-ok").addEventListener("click", async () => {
+        try {
+          await ackRejection({ approvalId: a.id });
+        } catch (e) {
+          console.warn("ack rejection:", e);
+        }
+        overlay.remove();
+        rejectShowing = false;
+        showNextRejection();
       });
     }
   </script>

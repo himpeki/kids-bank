@@ -25,27 +25,20 @@
 
 .member-card .card-left { flex: 1; min-width: 0; }
 .member-card .bank-name {
-  font-size: 3.2mm;
+  font-size: 3.4mm;
   font-weight: 700;
-  color: #e5537d;
+  color: var(--pc-accent, #e5537d);
   letter-spacing: 0.3mm;
+  line-height: 1.5;
 }
 .member-card .kid-name {
-  font-size: 7mm;
+  font-size: 8mm;
   font-weight: 800;
-  color: #3d3a4b;
-  margin: 2mm 0 1mm;
+  color: var(--pc-text, #3d3a4b);
+  margin: 3mm 0 1mm;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-}
-.member-card .card-note { font-size: 2.6mm; color: #8a8699; line-height: 1.5; }
-.member-card .deco {
-  position: absolute;
-  right: 34mm;
-  bottom: 2mm;
-  font-size: 8mm;
-  opacity: 0.9;
 }
 
 .member-card .qr-holder {
@@ -64,12 +57,30 @@
   height: 27mm !important;
 }
 
-/* 子どもが選んだきせかえテーマをカードにも反映 */
-.member-card.theme-strawberry { background: linear-gradient(135deg, #ffe4ee 0%, #fff5f9 60%, #ffeef5 100%); border-color: #ffb0cd; }
-.member-card.theme-sky { background: linear-gradient(135deg, #e3f2ff 0%, #f4faff 60%, #eaf5ff 100%); border-color: #a8d5ff; }
-.member-card.theme-grape { background: linear-gradient(135deg, #efe6ff 0%, #f9f6ff 60%, #f1eaff 100%); border-color: #cfb3f2; }
-.member-card.theme-pudding { background: linear-gradient(135deg, #fff2cf 0%, #fffaea 60%, #fff5da 100%); border-color: #ffd98a; }
-.member-card.theme-mint { background: linear-gradient(135deg, #ddf6ea 0%, #f2fcf7 60%, #e5f9f0 100%); border-color: #93e2c2; }
+/* 子どもが選んだきせかえテーマ(配色・文字色)をカードにも反映 */
+.member-card.theme-strawberry { --pc-accent: #e64c86; background: linear-gradient(135deg, #ffe4ee 0%, #fff5f9 60%, #ffeef5 100%); border-color: #ffb0cd; }
+.member-card.theme-sky { --pc-accent: #2f7fd6; background: linear-gradient(135deg, #e3f2ff 0%, #f4faff 60%, #eaf5ff 100%); border-color: #a8d5ff; }
+.member-card.theme-grape { --pc-accent: #7e57c2; background: linear-gradient(135deg, #efe6ff 0%, #f9f6ff 60%, #f1eaff 100%); border-color: #cfb3f2; }
+.member-card.theme-pudding { --pc-accent: #c8871a; background: linear-gradient(135deg, #fff2cf 0%, #fffaea 60%, #fff5da 100%); border-color: #ffd98a; }
+.member-card.theme-mint { --pc-accent: #24996f; background: linear-gradient(135deg, #ddf6ea 0%, #f2fcf7 60%, #e5f9f0 100%); border-color: #93e2c2; }
+.member-card.theme-night {
+  --pc-accent: #b98af7;
+  --pc-text: #f0e9fb;
+  background: linear-gradient(135deg, #37304a 0%, #1c1628 60%, #14101d 100%);
+  border-color: #6b5a8e;
+}
+
+/* きせかえの「はいけい」画像をカード背景に(文字が読めるよう薄いウォッシュを重ねる) */
+.member-card.has-bg {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.72)),
+    var(--card-bg-url) center / cover no-repeat;
+}
+.member-card.theme-night.has-bg {
+  background:
+    linear-gradient(rgba(24, 18, 34, 0.82), rgba(24, 18, 34, 0.88)),
+    var(--card-bg-url) center / cover no-repeat;
+}
 
 @media print {
   body { background: #fff !important; }

@@ -202,33 +202,47 @@ describe("残高改ざん防止", () => {
 });
 
 // ================================================================
-describe("兄弟間送金", () => {
-  it("正しい送金は成功する", async () => {
-    await assertSucceeds(transferBatch(as(UID.taro), UID.taro, {
+describe("兄弟間送金(承認制)", () => {
+  const transferReq = (db, { amount = 100, currency = "yen", to = "jiro", id = "at1" } = {}) =>
+    setDoc(fdoc(db, "approvals", id), {
+      kind: "transfer", refId: null, memberId: "taro", toMemberId: to, currency, amount,
+      message: "おやつ代", status: "pending", requestedAt: serverTimestamp(),
+    });
+
+  it("子は残高内で送金リクエストでき、残高超過・自分宛は拒否", async () => {
+    await assertSucceeds(transferReq(as(UID.taro)));
+    await assertFails(transferReq(as(UID.taro), { amount: 9999, id: "at2" }));
+    await assertFails(transferReq(as(UID.taro), { to: "taro", id: "at3" }));
+  });
+
+  it("子が直接 transfer 取引で残高を動かすのは拒否(承認制のため)", async () => {
+    await assertFails(transferBatch(as(UID.taro), UID.taro, {
       from: "taro", to: "jiro", currency: "yen", amount: 100, newFrom: 400, newTo: 400,
     }));
-  });
-
-  it("金額と残高変化が一致しない送金は拒否", async () => {
-    await assertFails(transferBatch(as(UID.taro), UID.taro, {
-      from: "taro", to: "jiro", currency: "yen", amount: 100, newFrom: 450, newTo: 400,
-    }));
-    // 相手だけ多く増やすのも拒否
-    await assertFails(transferBatch(as(UID.taro), UID.taro, {
-      from: "taro", to: "jiro", currency: "yen", amount: 100, newFrom: 400, newTo: 900,
-    }));
-  });
-
-  it("残高を超える送金(マイナス残高)は拒否", async () => {
-    await assertFails(transferBatch(as(UID.taro), UID.taro, {
-      from: "taro", to: "jiro", currency: "yen", amount: 600, newFrom: -100, newTo: 900,
-    }));
-  });
-
-  it("他人のおさいふからの送金(なりすまし)は拒否", async () => {
     await assertFails(transferBatch(as(UID.jiro), UID.jiro, {
       from: "taro", to: "jiro", currency: "yen", amount: 100, newFrom: 400, newTo: 400,
     }));
+  });
+
+  it("親の承認で送金が成立し、受け取り側に開封演出用ギフトも作られる", async () => {
+    await transferReq(as(UID.taro));
+    const db = as(UID.papa);
+    const b = writeBatch(db);
+    b.update(fdoc(db, "wallets", "taro"), { yen: 400, lastTxnId: "t-x1" });
+    b.update(fdoc(db, "wallets", "jiro"), { yen: 400, lastTxnId: "t-x1" });
+    b.set(fdoc(db, "transactions", "t-x1"), {
+      type: "transfer", currency: "yen", amount: 100, fromMemberId: "taro", toMemberId: "jiro",
+      memberIds: ["taro", "jiro"], byUid: UID.papa, message: "おやつ代", refId: "at1",
+      balanceAfter: { from: 400, to: 400 }, createdAt: serverTimestamp(),
+    });
+    b.set(fdoc(db, "gifts", "g-t1"), {
+      toMemberId: "jiro", fromMemberId: "taro", kind: "yen", amount: 100, refId: "t-x1",
+      message: "おやつ代", seenAt: null, createdAt: serverTimestamp(),
+    });
+    b.update(fdoc(db, "approvals", "at1"), {
+      status: "approved", decidedAt: serverTimestamp(), decidedByUid: UID.papa, note: "",
+    });
+    await assertSucceeds(b.commit());
   });
 
   it("子は grant(自分への入金)を作れない", async () => {
@@ -236,6 +250,57 @@ describe("兄弟間送金", () => {
       type: "grant", memberId: "taro", currency: "yen", amount: 1000, newBal: 1500,
     });
     await assertFails(commit());
+  });
+});
+
+// ================================================================
+describe("券の譲渡・交換(承認制)", () => {
+  const ticketTransferReq = (db, { ticketId = "tk1", approvalId = "att1", memberId = "taro", to = "jiro", want = null } = {}) => {
+    const b = writeBatch(db);
+    b.update(fdoc(db, "tickets", ticketId), { status: "pending", approvalId });
+    b.set(fdoc(db, "approvals", approvalId), {
+      kind: "ticketTransfer", refId: ticketId, memberId, toMemberId: to,
+      wantTicketId: want, status: "pending", requestedAt: serverTimestamp(),
+    });
+    return b.commit();
+  };
+
+  it("自分の券の譲渡リクエストができる", async () => {
+    await assertSucceeds(ticketTransferReq(as(UID.taro)));
+  });
+
+  it("自分宛の譲渡・他人の券の譲渡は拒否", async () => {
+    await assertFails(ticketTransferReq(as(UID.taro), { to: "taro", approvalId: "att2" }));
+    await assertFails(ticketTransferReq(as(UID.jiro), { approvalId: "att3" })); // tk1 はたろうの券
+  });
+
+  it("親の承認で券の持ち主が変わり、ギフトが作られる", async () => {
+    await ticketTransferReq(as(UID.taro));
+    const db = as(UID.papa);
+    const b = writeBatch(db);
+    b.update(fdoc(db, "approvals", "att1"), {
+      status: "approved", decidedAt: serverTimestamp(), decidedByUid: UID.papa, note: "",
+    });
+    b.update(fdoc(db, "tickets", "tk1"), { memberId: "jiro", status: "unused", approvalId: null });
+    b.set(fdoc(db, "gifts", "g-tt1"), {
+      toMemberId: "jiro", fromMemberId: "taro", kind: "ticket", amount: null, refId: "tk1",
+      message: "", seenAt: null, createdAt: serverTimestamp(),
+    });
+    await assertSucceeds(b.commit());
+  });
+});
+
+// ================================================================
+describe("却下のお知らせ(既読)", () => {
+  it("却下は本人だけが1回だけ既読にできる", async () => {
+    await raw((db) => setDoc(fdoc(db, "approvals", "ar1"), {
+      kind: "withdraw", currency: "yen", amount: 100, refId: null, memberId: "taro",
+      status: "rejected", requestedAt: Timestamp.now(), decidedAt: Timestamp.now(),
+      decidedByUid: UID.papa, note: "", seenAt: null,
+    }));
+    await assertFails(updateDoc(fdoc(as(UID.jiro), "approvals", "ar1"), { seenAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(fdoc(as(UID.taro), "approvals", "ar1"), { seenAt: serverTimestamp() }));
+    await assertFails(updateDoc(fdoc(as(UID.taro), "approvals", "ar1"), { seenAt: serverTimestamp() }));
   });
 });
 
@@ -535,6 +600,20 @@ describe("サプライズギフト", () => {
       message: "じいじより", seenAt: null, createdAt: serverTimestamp(),
     });
     await assertSucceeds(b.commit());
+  });
+
+  it("giver は差出人を他人にできない(代行は親のみ)", async () => {
+    const db = as(UID.jiji);
+    const b = writeBatch(db);
+    b.set(fdoc(db, "tickets", "tk-spoof"), {
+      memberId: "taro", emoji: "🎫", title: "x", desc: "", status: "unused",
+      approvalId: null, createdByUid: UID.jiji, createdAt: serverTimestamp(), usedAt: null,
+    });
+    b.set(fdoc(db, "gifts", "g-spoof"), {
+      toMemberId: "taro", fromMemberId: "papa", kind: "ticket", amount: null, refId: "tk-spoof",
+      message: "", seenAt: null, createdAt: serverTimestamp(),
+    });
+    await assertFails(b.commit());
   });
 
   it("開封記録は宛先の子だけができる", async () => {

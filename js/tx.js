@@ -4,6 +4,7 @@ import { auth } from "./firebase-init.js";
 import {
   db,
   doc,
+  getDoc,
   writeBatch,
   runTransaction,
   serverTimestamp,
@@ -27,21 +28,41 @@ function baseTxn(fields) {
   };
 }
 
-/** 兄弟間送金(子が実行)。ありがとうメッセージ付き */
-export async function transfer({ fromMemberId, toMemberId, currency, amount, message = "" }) {
+/** 子: 兄弟間送金のリクエスト(親の承認で成立する) */
+export async function requestTransfer({ fromMemberId, toMemberId, currency, amount, message }) {
   assertAmount(amount);
-  const fromRef = walletRef(fromMemberId);
-  const toRef = walletRef(toMemberId);
+  const aRef = doc(famCol("approvals"), "a" + shortId());
+  const batch = writeBatch(db);
+  batch.set(aRef, {
+    kind: "transfer",
+    refId: null,
+    memberId: fromMemberId,
+    toMemberId,
+    currency,
+    amount,
+    message: message || "",
+    status: "pending",
+    requestedAt: serverTimestamp(),
+  });
+  await batch.commit();
+  return aRef.id;
+}
+
+/** 親: 送金リクエストを承認(両残高の移動+取引+受け取り演出用ギフト+承認更新を1コミット) */
+export async function approveTransfer({ approvalId, fromMemberId, toMemberId, currency, amount, message }) {
   await runTransaction(db, async (tx) => {
-    const [fromSnap, toSnap] = await Promise.all([tx.get(fromRef), tx.get(toRef)]);
+    const [fromSnap, toSnap] = await Promise.all([
+      tx.get(walletRef(fromMemberId)),
+      tx.get(walletRef(toMemberId)),
+    ]);
     const from = fromSnap.data();
     const to = toSnap.data();
-    if (from[currency] < amount) throw new Error("ざんだかが たりないよ");
+    if (from[currency] < amount) throw new Error("残高が不足しています(却下してください)");
     const txnRef = doc(famCol("transactions"), "t" + shortId());
     const newFrom = from[currency] - amount;
     const newTo = to[currency] + amount;
-    tx.update(fromRef, { [currency]: newFrom, lastTxnId: txnRef.id });
-    tx.update(toRef, { [currency]: newTo, lastTxnId: txnRef.id });
+    tx.update(walletRef(fromMemberId), { [currency]: newFrom, lastTxnId: txnRef.id });
+    tx.update(walletRef(toMemberId), { [currency]: newTo, lastTxnId: txnRef.id });
     tx.set(txnRef, baseTxn({
       type: "transfer",
       currency,
@@ -50,9 +71,83 @@ export async function transfer({ fromMemberId, toMemberId, currency, amount, mes
       toMemberId,
       memberIds: [fromMemberId, toMemberId],
       balanceAfter: { from: newFrom, to: newTo },
-      message,
+      message: message || "",
+      refId: approvalId,
     }));
+    // もらった側にプレゼント開封演出を出すためのギフト
+    tx.set(doc(famCol("gifts"), "g" + shortId()), {
+      toMemberId,
+      fromMemberId,
+      kind: currency,
+      amount,
+      refId: txnRef.id,
+      message: message || "",
+      seenAt: null,
+      createdAt: serverTimestamp(),
+    });
+    tx.update(famDoc("approvals", approvalId), decisionFields("approved"));
   });
+}
+
+/** 子: 券の譲渡・交換リクエスト(自分の券を承認待ちにする) */
+export async function requestTicketTransfer({ ticketId, memberId, toMemberId, wantTicketId = null }) {
+  const aRef = doc(famCol("approvals"), "a" + shortId());
+  const batch = writeBatch(db);
+  batch.update(famDoc("tickets", ticketId), { status: "pending", approvalId: aRef.id });
+  batch.set(aRef, {
+    kind: "ticketTransfer",
+    refId: ticketId,
+    memberId,
+    toMemberId,
+    wantTicketId,
+    status: "pending",
+    requestedAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+/** 親: 券の譲渡・交換を承認(所有者の付け替え+開封演出用ギフト) */
+export async function approveTicketTransfer({ approvalId, ticketId, fromMemberId, toMemberId, wantTicketId }) {
+  if (wantTicketId) {
+    const want = await getDoc(famDoc("tickets", wantTicketId));
+    if (!want.exists() || want.data().status !== "unused" || want.data().memberId !== toMemberId) {
+      throw new Error("交換相手の券が使用済みなどで見つかりません。却下してください");
+    }
+  }
+  const batch = writeBatch(db);
+  batch.update(famDoc("approvals", approvalId), decisionFields("approved"));
+  batch.update(famDoc("tickets", ticketId), { memberId: toMemberId, status: "unused", approvalId: null });
+  batch.set(doc(famCol("gifts"), "g" + shortId()), {
+    toMemberId,
+    fromMemberId,
+    kind: "ticket",
+    amount: null,
+    refId: ticketId,
+    message: "",
+    seenAt: null,
+    createdAt: serverTimestamp(),
+  });
+  if (wantTicketId) {
+    batch.update(famDoc("tickets", wantTicketId), { memberId: fromMemberId, status: "unused", approvalId: null });
+    batch.set(doc(famCol("gifts"), "g" + shortId()), {
+      toMemberId: fromMemberId,
+      fromMemberId: toMemberId,
+      kind: "ticket",
+      amount: null,
+      refId: wantTicketId,
+      message: "",
+      seenAt: null,
+      createdAt: serverTimestamp(),
+    });
+  }
+  await batch.commit();
+}
+
+/** 子: 却下されたお知らせを既読にする */
+export async function ackRejection({ approvalId }) {
+  const batch = writeBatch(db);
+  batch.update(famDoc("approvals", approvalId), { seenAt: serverTimestamp() });
+  await batch.commit();
 }
 
 /**
@@ -211,6 +306,8 @@ function decisionFields(status, note = "") {
     decidedAt: serverTimestamp(),
     decidedByUid: auth.currentUser.uid,
     note,
+    // 却下は子の画面で「おへんじ」として1回だけ表示する(seenAt=null が未読)
+    ...(status === "rejected" ? { seenAt: null } : {}),
   };
 }
 
