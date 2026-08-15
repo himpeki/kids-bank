@@ -83,8 +83,8 @@
         <div class="member-pick" id="send-to"></div>
         <label>なにを おくる?</label>
         <div class="member-pick currency-pick" id="send-currency">
-          <button type="button" data-cur="yen" class="selected">💴 えん</button>
-          <button type="button" data-cur="pt">⭐ pt</button>
+          <button type="button" data-cur="yen" class="selected">💴 おこづかい</button>
+          <button type="button" data-cur="pt">⭐ ポイント</button>
         </div>
         <label>いくら おくる?</label>
         <input type="number" id="send-amount" class="amount-input" placeholder="0" inputmode="numeric" min="1">
@@ -101,6 +101,10 @@
       <h2>📖 きろく</h2>
       <div class="card">
         <h3>📈 ざんだかの うごき</h3>
+        <div class="member-pick currency-pick" id="chart-currency" style="margin-bottom:10px">
+          <button type="button" data-cur="yen" class="selected">💴 おこづかい</button>
+          <button type="button" data-cur="pt">⭐ ポイント</button>
+        </div>
         <div class="chart-wrap"><canvas id="balance-chart"></canvas></div>
       </div>
       <div class="card" id="goal-card">
@@ -124,6 +128,7 @@
       <div class="card">
         <h3>📜 おこづかいちょう</h3>
         <div id="txn-list"></div>
+        <button id="txn-more" class="btn btn-ghost btn-sm hidden" style="margin-top:10px">もっとみる</button>
       </div>
     </section>
   </div>
@@ -141,7 +146,7 @@
     import { requireRole } from "./js/auth.js";
     import {
       db, doc, getDoc, getDocs, setDoc, onSnapshot, query, where, orderBy, limit,
-      updateDoc, serverTimestamp, famCol, famDoc, walletRef, settingsRef, shortId,
+      startAfter, updateDoc, serverTimestamp, famCol, famDoc, walletRef, settingsRef, shortId,
     } from "./js/db.js";
     import {
       transfer, requestTicketUse, cancelTicketRequest, reportQuest,
@@ -399,24 +404,54 @@
     });
 
     // ---------- きろくタブ ----------
-    async function loadLog() {
+    // おこづかいちょうは50件ずつ読み込み、「もっとみる」で過去へ無限に遡れる
+    // (元帳は追記専用で全取引がFirestoreに残り続ける)
+    const LOG_PAGE = 50;
+    let logTxns = [];      // 読み込み済みの取引(新しい順)
+    let logCursor = null;  // 続きを読むためのカーソル
+    let chartMode = "yen"; // グラフの表示通貨
+
+    async function loadLog(reset = true) {
       try {
+        if (reset) {
+          logTxns = [];
+          logCursor = null;
+        }
         const snap = await getDocs(query(
           famCol("transactions"),
           where("memberIds", "array-contains", me),
           orderBy("createdAt", "desc"),
-          limit(50),
+          ...(logCursor ? [startAfter(logCursor)] : []),
+          limit(LOG_PAGE),
         ));
-        const txns = snap.docs.map((d) => d.data());
+        if (snap.docs.length) logCursor = snap.docs[snap.docs.length - 1];
+        logTxns.push(...snap.docs.map((d) => d.data()));
+        // 1ページぶんまるごと取れたときだけ続きがある可能性がある
+        document.getElementById("txn-more").classList.toggle("hidden", snap.docs.length < LOG_PAGE);
         document.getElementById("txn-list").innerHTML =
-          txns.map(txnHtml).join("") || '<p class="muted">まだ きろくがないよ</p>';
-        drawBalanceChart(document.getElementById("balance-chart"), [...txns].reverse(), me, wallet);
+          logTxns.map(txnHtml).join("") || '<p class="muted">まだ きろくがないよ</p>';
+        drawLogChart();
       } catch (e) {
         console.error(e);
         document.getElementById("txn-list").innerHTML =
           '<p class="muted">きろくを よみこめなかったよ(インデックス作成中かも)</p>';
       }
     }
+
+    function drawLogChart() {
+      drawBalanceChart(document.getElementById("balance-chart"), [...logTxns].reverse(), me, wallet, chartMode);
+    }
+
+    document.getElementById("txn-more").addEventListener("click", (e) =>
+      withBusy(e.target, () => loadLog(false)));
+
+    document.getElementById("chart-currency").addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      chartMode = btn.dataset.cur;
+      document.querySelectorAll("#chart-currency button").forEach((b) => b.classList.toggle("selected", b === btn));
+      drawLogChart();
+    });
 
     // ---------- 目標貯金 ----------
     let goals = [];

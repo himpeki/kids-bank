@@ -213,7 +213,18 @@ try {
     return c && c.width > 0 && c.height > 0;
   });
   check("おこづかい帳に取引履歴・残高グラフ描画", chartDrawn);
+
+  // グラフの通貨切替(おこづかい ⇔ ポイント)
+  await cp.$eval('#chart-currency [data-cur="pt"]', (el) => el.click());
+  await sleep(400);
+  const ptSelected = await cp.$eval('#chart-currency [data-cur="pt"]', (el) =>
+    el.classList.contains("selected"));
+  check("グラフをポイント表示に切替", ptSelected);
   await cp.screenshot({ path: `${SHOT_DIR}/child-log.png` });
+
+  // 取引が50件未満なら「もっとみる」は出ない
+  const moreHidden = await cp.$eval("#txn-more", (el) => el.classList.contains("hidden"));
+  check("取引50件未満では「もっとみる」非表示", moreHidden);
 
   // ============ 9. 親: ダッシュボード最終確認 ============
   await pp.evaluate(() => { location.hash = "#home"; });

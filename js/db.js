@@ -14,6 +14,7 @@ export {
   where,
   orderBy,
   limit,
+  startAfter,
   writeBatch,
   runTransaction,
   serverTimestamp,
