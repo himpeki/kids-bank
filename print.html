@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QRカード印刷 | おこづかいバンク</title>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/base.css">
+  <link rel="stylesheet" href="./css/print.css">
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+</head>
+<body>
+  <div class="container no-print">
+    <h1>🖨 QRカード印刷</h1>
+    <p class="muted">
+      名刺サイズ(91×55mm)のメンバーズカードです。A4に印刷して切り取ってください。<br>
+      印刷ダイアログで「倍率: 100%」「背景のグラフィック: ON」にすると綺麗に出ます。
+    </p>
+    <button class="btn btn-primary" onclick="window.print()">🖨 印刷する</button>
+    <a class="btn btn-ghost" href="./parent.html">管理画面へもどる</a>
+    <p class="muted" id="print-note"></p>
+  </div>
+
+  <div class="print-cards" id="cards"></div>
+
+  <script type="module">
+    import { requireRole } from "./js/auth.js";
+    import { getDocs, query, where, famCol, getFamilyId } from "./js/db.js";
+    import { esc } from "./js/ui.js";
+
+    await requireRole("parent");
+    const famId = getFamilyId();
+
+    const memberSnap = await getDocs(famCol("members"));
+    const members = new Map();
+    memberSnap.forEach((d) => members.set(d.id, d.data()));
+
+    // 子どもの「再利用可・有効」トークンを集める(カード=このトークン)
+    const invSnap = await getDocs(query(famCol("invites"), where("role", "==", "child")));
+    const cardInvites = [];
+    invSnap.forEach((d) => {
+      const v = d.data();
+      if (!v.revoked && v.reusable) cardInvites.push({ token: d.id, ...v });
+    });
+
+    const base = new URL("./index.html", location.href).href;
+    const AVATARS = ["🐣", "🐰", "🦊", "🐻", "🐱", "🐶"];
+    const cardsEl = document.getElementById("cards");
+
+    if (!cardInvites.length) {
+      document.getElementById("print-note").textContent =
+        "有効なカード用リンクがありません。管理画面の設定タブで「カード用リンクを再発行」してください。";
+    }
+
+    cardInvites.forEach((inv, i) => {
+      const m = members.get(inv.memberId) ?? { name: "?" };
+      const url = `${base}?f=${famId}&t=${inv.token}`;
+      const card = document.createElement("div");
+      card.className = "member-card";
+      card.innerHTML = `
+        <div class="card-left">
+          <div class="bank-name">🏦 おこづかいバンク メンバーズカード</div>
+          <div class="kid-name">${esc(m.name)}</div>
+          <div class="card-note">スマホのカメラで QRコードを よみとってね。<br>たいせつに もってね!</div>
+        </div>
+        <div class="deco">${m.avatar || AVATARS[(m.sort ?? i) % AVATARS.length]}</div>
+        <div class="qr-holder"><canvas></canvas></div>`;
+      cardsEl.appendChild(card);
+      QRCode.toCanvas(card.querySelector("canvas"), url, { width: 108, margin: 0 });
+    });
+  </script>
+</body>
+</html>

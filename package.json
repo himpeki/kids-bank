@@ -1,0 +1,19 @@
+{
+  "name": "okozukai-bank",
+  "private": true,
+  "type": "module",
+  "description": "家族向けおこづかい・ギフト券アプリ(開発ツール用 package.json。アプリ本体はビルド不要の静的サイト)",
+  "scripts": {
+    "pretest": "node tools/gen-test-rules.mjs",
+    "test": "firebase emulators:exec --only firestore --project demo-okozukai-bank \"vitest run\"",
+    "emu": "node tools/gen-test-rules.mjs && firebase emulators:start --project demo-okozukai-bank",
+    "serve": "npx -y http-server -p 5500 -c-1 .",
+    "deploy:rules": "pwsh -File tools/deploy-rules.ps1"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.10.0",
+    "firebase-tools": "^13.35.1",
+    "vitest": "^3.2.4"
+  }
+}

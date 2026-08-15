@@ -1,0 +1,9 @@
+node_modules/
+.jre/
+package-lock.json.bak
+rules/setup-key.local.txt
+rules/firestore.deploy.rules
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebase/

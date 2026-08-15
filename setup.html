@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>はじめての設定 | おこづかいバンク</title>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/base.css">
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 はじめての設定</h1>
+    <p class="muted">家族アカウントを作成します(保護者向け・1回だけ)。</p>
+
+    <div id="already" class="card hidden">
+      <p>この端末はすでに登録済みです。</p>
+      <a class="btn btn-primary" href="./parent.html">管理画面へ</a>
+    </div>
+
+    <form id="setup-form">
+      <div class="card">
+        <h3>1. あいことば</h3>
+        <p class="muted">セキュリティルールに設定した「あいことば(セットアップキー)」を入力してください。README の手順で設定したものです。</p>
+        <input type="password" id="setup-key" placeholder="あいことば" required autocomplete="off">
+      </div>
+
+      <div class="card">
+        <h3>2. 家族の名前</h3>
+        <input type="text" id="family-name" placeholder="例: たなかけ" required maxlength="30">
+        <h3 style="margin-top:16px">あなたの名前</h3>
+        <p class="muted">この端末が最初の「親」端末として登録されます。</p>
+        <input type="text" id="self-name" placeholder="例: パパ" required maxlength="20">
+      </div>
+
+      <div class="card">
+        <h3>3. 家族メンバー</h3>
+        <p class="muted">子どもと、あとから招待する家族を追加してください(あとから管理画面でも追加できます)。</p>
+        <div id="member-rows"></div>
+        <button type="button" id="add-member" class="btn btn-ghost btn-sm">+ メンバーを追加</button>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-big">家族アカウントを作成する</button>
+    </form>
+
+    <div id="done" class="hidden">
+      <div class="card">
+        <h2>✅ 作成できました!</h2>
+        <p>次のステップ:</p>
+        <ol>
+          <li><a href="./print.html"><b>QRカードを印刷する</b></a>(子どもに渡す誕生日カード)</li>
+          <li>もう一人の保護者や祖父母には、下の招待リンクを送る(LINE等でOK)</li>
+          <li><a href="./parent.html">管理画面</a>でギフト券を発行する</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>招待リンク</h3>
+        <div id="invite-list"></div>
+        <p class="muted">⚠️ 子どものカード用リンクはQRカード印刷ページからいつでも取得できます。大人用リンクは7日間有効・1回だけ使えます。</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { resolveIdentity, createFamily } from "./js/auth.js";
+    import { toast, esc, withBusy } from "./js/ui.js";
+    import { ROLE_LABELS } from "./js/presets.js";
+
+    const rowsEl = document.getElementById("member-rows");
+
+    function addRow(name = "", role = "child") {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.style.margin = "8px 0";
+      div.innerHTML = `
+        <input type="text" class="m-name" placeholder="名前" value="${esc(name)}" maxlength="20" required>
+        <select class="m-role" style="max-width:150px">
+          <option value="child">こども</option>
+          <option value="parent">おうちの人</option>
+          <option value="giver">おくる人(祖父母等)</option>
+        </select>
+        <button type="button" class="btn btn-ghost btn-sm" style="flex:0" title="削除">✕</button>`;
+      div.querySelector(".m-role").value = role;
+      div.querySelector("button").addEventListener("click", () => div.remove());
+      rowsEl.appendChild(div);
+    }
+    addRow("", "child");
+    addRow("", "child");
+    addRow("", "parent");
+    document.getElementById("add-member").addEventListener("click", () => addRow());
+
+    resolveIdentity().then((ident) => {
+      if (ident) {
+        document.getElementById("already").classList.remove("hidden");
+        document.getElementById("setup-form").classList.add("hidden");
+      }
+    });
+
+    document.getElementById("setup-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('[type="submit"]');
+      await withBusy(btn, async () => {
+        const members = [...rowsEl.querySelectorAll(".row")]
+          .map((r) => ({
+            name: r.querySelector(".m-name").value.trim(),
+            role: r.querySelector(".m-role").value,
+          }))
+          .filter((m) => m.name);
+        try {
+          const result = await createFamily({
+            setupKey: document.getElementById("setup-key").value,
+            familyName: document.getElementById("family-name").value.trim(),
+            selfName: document.getElementById("self-name").value.trim(),
+            members,
+          });
+          const base = new URL("./index.html", location.href).href;
+          document.getElementById("invite-list").innerHTML = result.invites
+            .map((inv) => {
+              const url = `${base}?f=${result.familyId}&t=${inv.token}`;
+              return `<div class="card" style="box-shadow:none;border:1px solid var(--c-line)">
+                <b>${esc(inv.name)}</b> <span class="muted">(${ROLE_LABELS[inv.role]})</span><br>
+                <input type="text" readonly value="${esc(url)}" onclick="this.select()" style="margin-top:6px;font-size:12px">
+              </div>`;
+            })
+            .join("");
+          document.getElementById("setup-form").classList.add("hidden");
+          document.getElementById("done").classList.remove("hidden");
+          window.scrollTo(0, 0);
+        } catch (err) {
+          console.error(err);
+          const msg = String(err.message || err);
+          toast(
+            msg.includes("permission") || msg.includes("PERMISSION")
+              ? "作成できません。あいことばが正しいか確認してください。"
+              : `エラー: ${msg}`,
+            "error",
+          );
+        }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,208 @@
+/* 子モード: たのしい見た目 */
+body.child-mode {
+  background: linear-gradient(180deg, #fff3e6 0%, #fff8f0 30%);
+  padding-bottom: 84px; /* 下部タブぶん */
+}
+
+.child-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 4px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+.child-header .avatar { font-size: 34px; }
+.child-header h1 { font-size: 20px; }
+
+/* 残高カード */
+.balance-cards { display: flex; gap: 10px; }
+.balance-card {
+  flex: 1;
+  border-radius: var(--radius);
+  padding: 16px 14px;
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+.balance-card.yen { background: linear-gradient(135deg, #4d96ff, #6fb4ff); }
+.balance-card.pt { background: linear-gradient(135deg, #ff8fab, #ffb3c8); }
+.balance-card .label { font-size: 13px; opacity: 0.9; }
+.balance-card .value { font-size: 30px; font-weight: 800; margin-top: 4px; }
+.balance-card .unit { font-size: 15px; }
+
+/* 下部タブ */
+.tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-top: 1px solid var(--c-line);
+  display: flex;
+  justify-content: space-around;
+  padding: 6px 0 max(8px, env(safe-area-inset-bottom));
+  z-index: 800;
+}
+.tabbar a {
+  text-decoration: none;
+  color: var(--c-sub);
+  font-size: 11px;
+  text-align: center;
+  flex: 1;
+  padding: 4px 0;
+  position: relative;
+}
+.tabbar a .icon { font-size: 24px; display: block; }
+.tabbar a.active { color: var(--c-primary-dark); font-weight: 700; }
+.tabbar a .badge { position: absolute; top: -2px; right: 18%; }
+
+/* ギフト券カード */
+.ticket-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ticket-card {
+  background: #fff;
+  border-radius: var(--radius);
+  border: 3px dashed var(--c-primary);
+  padding: 14px 12px;
+  text-align: center;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+.ticket-card .emoji { font-size: 40px; }
+.ticket-card .title { font-weight: 800; font-size: 15px; margin: 6px 0 2px; }
+.ticket-card .desc { font-size: 12px; color: var(--c-sub); min-height: 2.5em; }
+.ticket-card.pending { border-color: var(--c-warn); opacity: 0.85; }
+.ticket-card.used {
+  border-color: #ccc;
+  opacity: 0.55;
+  filter: grayscale(0.8);
+}
+.ticket-card.used::after {
+  content: "つかったよ";
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-14deg);
+  border: 3px solid var(--c-danger);
+  color: var(--c-danger);
+  font-weight: 800;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* クエスト */
+.quest-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin: 10px 0;
+  box-shadow: var(--shadow);
+}
+.quest-item .emoji { font-size: 30px; }
+.quest-item .title { font-weight: 700; flex: 1; }
+.quest-item .pt { color: var(--c-primary-dark); font-weight: 800; white-space: nowrap; }
+
+/* 送金 */
+.member-pick { display: flex; gap: 10px; }
+.member-pick button {
+  flex: 1;
+  border: 3px solid var(--c-line);
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 14px;
+  font-size: 16px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.member-pick button.selected { border-color: var(--c-accent); background: #eef5ff; }
+.currency-pick button.selected { border-color: var(--c-primary); background: #fff0f4; }
+.amount-input {
+  font-size: 32px;
+  text-align: center;
+  font-weight: 800;
+}
+
+/* きろく */
+.txn-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  border-bottom: 1px dashed var(--c-line);
+  font-size: 14px;
+}
+.txn-item .t-emoji { font-size: 22px; }
+.txn-item .t-main { flex: 1; }
+.txn-item .t-date { color: var(--c-sub); font-size: 11px; }
+.txn-item .t-amount { font-weight: 800; white-space: nowrap; }
+.t-amount.plus { color: var(--c-ok); }
+.t-amount.minus { color: var(--c-danger); }
+
+.goal-bar-wrap {
+  background: #f1ede8;
+  border-radius: 999px;
+  height: 22px;
+  overflow: hidden;
+  margin: 8px 0 4px;
+}
+.goal-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #6bcb77, #38b26f);
+  border-radius: 999px;
+  transition: width 0.6s;
+  min-width: 6px;
+}
+
+.chart-wrap { height: 220px; position: relative; }
+
+/* ギフト開封演出 */
+.gift-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(45, 30, 50, 0.78);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  text-align: center;
+  color: #fff;
+  padding: 24px;
+}
+.gift-box {
+  font-size: 110px;
+  cursor: pointer;
+  animation: bounce 1s infinite;
+  user-select: none;
+}
+@keyframes bounce {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-16px) rotate(3deg); }
+}
+.gift-open { animation: pop 0.5s; }
+@keyframes pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  70% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.gift-from { font-size: 22px; font-weight: 800; margin-top: 10px; }
+.gift-content { font-size: 34px; font-weight: 800; margin: 10px 0; }
+.gift-message {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  font-size: 17px;
+  line-height: 1.8;
+  max-width: 90%;
+  white-space: pre-wrap;
+}
+
+/* クイズ */
+.quiz-q { font-size: 28px; font-weight: 800; text-align: center; margin: 12px 0; }
+
+/* ロックされたタブ・機能 */
+.locked { opacity: 0.45; pointer-events: none; }

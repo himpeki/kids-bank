@@ -1,0 +1,72 @@
+/* QRカード印刷: 名刺サイズ 91mm × 55mm */
+.print-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8mm;
+  padding: 10mm;
+  justify-content: flex-start;
+}
+
+.member-card {
+  width: 91mm;
+  height: 55mm;
+  border-radius: 4mm;
+  background: linear-gradient(135deg, #ffe9f0 0%, #fff7e0 60%, #e8f4ff 100%);
+  border: 0.6mm solid #ffb3c8;
+  display: flex;
+  align-items: center;
+  padding: 4mm 5mm;
+  gap: 4mm;
+  page-break-inside: avoid;
+  break-inside: avoid;
+  overflow: hidden;
+  position: relative;
+}
+
+.member-card .card-left { flex: 1; min-width: 0; }
+.member-card .bank-name {
+  font-size: 3.2mm;
+  font-weight: 700;
+  color: #e5537d;
+  letter-spacing: 0.3mm;
+}
+.member-card .kid-name {
+  font-size: 7mm;
+  font-weight: 800;
+  color: #3d3a4b;
+  margin: 2mm 0 1mm;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.member-card .card-note { font-size: 2.6mm; color: #8a8699; line-height: 1.5; }
+.member-card .deco {
+  position: absolute;
+  right: 34mm;
+  bottom: 2mm;
+  font-size: 8mm;
+  opacity: 0.9;
+}
+
+.member-card .qr-holder {
+  width: 30mm;
+  height: 30mm;
+  background: #fff;
+  border-radius: 2mm;
+  padding: 1.5mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.member-card .qr-holder canvas,
+.member-card .qr-holder img {
+  width: 27mm !important;
+  height: 27mm !important;
+}
+
+@media print {
+  body { background: #fff !important; }
+  .no-print { display: none !important; }
+  .print-cards { padding: 0; gap: 6mm; }
+  @page { size: A4; margin: 12mm; }
+}

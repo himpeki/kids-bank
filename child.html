@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>おこづかいバンク</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+  <meta name="theme-color" content="#ff8fab">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/base.css">
+  <link rel="stylesheet" href="./css/child.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+</head>
+<body class="child-mode">
+  <div class="child-header">
+    <span class="avatar" id="my-avatar">🐣</span>
+    <div>
+      <h1 id="my-name">...</h1>
+      <div class="muted" id="my-level">Lv.1</div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- ============ ホーム ============ -->
+    <section id="tab-home">
+      <div class="balance-cards">
+        <div class="balance-card yen">
+          <div class="label">おこづかい</div>
+          <div class="value"><span id="bal-yen">0</span><span class="unit"> えん</span></div>
+        </div>
+        <div class="balance-card pt">
+          <div class="label">おてつだいポイント</div>
+          <div class="value"><span id="bal-pt">0</span><span class="unit"> pt</span></div>
+        </div>
+      </div>
+
+      <div id="pending-info" class="card hidden">
+        <b>⏳ おうちの人の おへんじまち</b>
+        <div id="pending-list" class="muted" style="margin-top:6px"></div>
+      </div>
+
+      <div class="card" id="quiz-card">
+        <h3>✏️ きょうの さんすうチャレンジ</h3>
+        <div id="quiz-body">
+          <div class="quiz-q" id="quiz-q">...</div>
+          <div class="row">
+            <input type="number" id="quiz-answer" class="amount-input" placeholder="?" inputmode="numeric">
+            <button id="quiz-btn" class="btn btn-accent" style="flex:0 0 auto">こたえる!</button>
+          </div>
+          <p class="muted center" id="quiz-note"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📖 さいきんの きろく</h3>
+        <div id="recent-txns"><p class="muted">まだ きろくがないよ</p></div>
+      </div>
+    </section>
+
+    <!-- ============ けん ============ -->
+    <section id="tab-tickets" class="hidden">
+      <h2>🎫 ギフトけん</h2>
+      <p class="muted">「つかう」をおすと おうちの人に れんらくがいくよ。</p>
+      <div id="ticket-list" class="ticket-list"></div>
+    </section>
+
+    <!-- ============ クエスト ============ -->
+    <section id="tab-quests" class="hidden">
+      <h2>⭐ おてつだいクエスト</h2>
+      <p class="muted">おてつだいをしたら「やった!」をおしてね。おうちの人がOKしたら ポイントがもらえるよ。</p>
+      <div id="quest-pending"></div>
+      <div id="quest-list"></div>
+    </section>
+
+    <!-- ============ おくる ============ -->
+    <section id="tab-send" class="hidden">
+      <h2>💸 おくる</h2>
+      <p class="muted">きょうだいに おかねやポイントを おくれるよ。</p>
+      <div class="card">
+        <label>だれに おくる?</label>
+        <div class="member-pick" id="send-to"></div>
+        <label>なにを おくる?</label>
+        <div class="member-pick currency-pick" id="send-currency">
+          <button type="button" data-cur="yen" class="selected">💴 えん</button>
+          <button type="button" data-cur="pt">⭐ pt</button>
+        </div>
+        <label>いくら おくる?</label>
+        <input type="number" id="send-amount" class="amount-input" placeholder="0" inputmode="numeric" min="1">
+        <label>メッセージ(なくてもOK)</label>
+        <input type="text" id="send-message" placeholder="いつもありがとう!" maxlength="100">
+        <div style="margin-top:14px">
+          <button id="send-btn" class="btn btn-primary btn-big">おくる!</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ きろく ============ -->
+    <section id="tab-log" class="hidden">
+      <h2>📖 きろく</h2>
+      <div class="card">
+        <h3>📈 ざんだかの うごき</h3>
+        <div class="chart-wrap"><canvas id="balance-chart"></canvas></div>
+      </div>
+      <div class="card" id="goal-card">
+        <h3>🎯 もくひょうちょきん</h3>
+        <div id="goal-list"></div>
+        <div id="goal-form" class="hidden">
+          <div class="row">
+            <input type="text" id="goal-title" placeholder="ほしいもの" maxlength="30">
+            <input type="number" id="goal-amount" placeholder="いくら?" inputmode="numeric" style="max-width:110px">
+          </div>
+          <div class="row" style="margin-top:8px">
+            <select id="goal-currency" style="max-width:110px">
+              <option value="yen">えん</option>
+              <option value="pt">pt</option>
+            </select>
+            <button id="goal-add-btn" class="btn btn-ok btn-sm" style="flex:0 0 auto">ついか!</button>
+          </div>
+        </div>
+        <button id="goal-show-form" class="btn btn-ghost btn-sm" style="margin-top:8px">+ もくひょうをつくる</button>
+      </div>
+      <div class="card">
+        <h3>📜 おこづかいちょう</h3>
+        <div id="txn-list"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 下部タブ -->
+  <nav class="tabbar">
+    <a href="#home" data-tab="home"><span class="icon">🏠</span>ホーム</a>
+    <a href="#tickets" data-tab="tickets"><span class="icon">🎫</span>けん</a>
+    <a href="#quests" data-tab="quests" id="tabbtn-quests"><span class="icon">⭐</span>クエスト</a>
+    <a href="#send" data-tab="send"><span class="icon">💸</span>おくる</a>
+    <a href="#log" data-tab="log"><span class="icon">📖</span>きろく</a>
+  </nav>
+
+  <script type="module">
+    import { requireRole } from "./js/auth.js";
+    import {
+      db, doc, getDoc, getDocs, setDoc, onSnapshot, query, where, orderBy, limit,
+      updateDoc, serverTimestamp, famCol, famDoc, walletRef, settingsRef, shortId,
+    } from "./js/db.js";
+    import {
+      transfer, requestTicketUse, cancelTicketRequest, reportQuest,
+      cancelQuestRequest, claimQuizReward,
+    } from "./js/tx.js";
+    import { applyPendingInterest } from "./js/interest.js";
+    import { toast, confirmModal, confetti, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy } from "./js/ui.js";
+    import { todaysQuiz } from "./js/quiz-pool.js";
+    import { drawBalanceChart } from "./js/charts.js";
+
+    const ident = await requireRole("child");
+    const me = ident.memberId;
+
+    // ---------- メンバー情報 ----------
+    const members = new Map();
+    const memberSnaps = await getDocs(famCol("members"));
+    memberSnaps.forEach((d) => members.set(d.id, d.data()));
+    const myMember = members.get(me) ?? { name: "?", level: 1, unlocks: {} };
+    const mName = (id) => members.get(id)?.name ?? "?";
+    const AVATARS = ["🐣", "🐰", "🦊", "🐻", "🐱", "🐶"];
+    document.getElementById("my-avatar").textContent =
+      myMember.avatar || AVATARS[(myMember.sort ?? 0) % AVATARS.length];
+    document.getElementById("my-name").textContent = myMember.name;
+    document.getElementById("my-level").textContent = `Lv.${myMember.level ?? 1}`;
+
+    // ---------- タブ切替 ----------
+    const tabs = ["home", "tickets", "quests", "send", "log"];
+    function showTab(name) {
+      if (!tabs.includes(name)) name = "home";
+      for (const t of tabs) {
+        document.getElementById(`tab-${t}`).classList.toggle("hidden", t !== name);
+      }
+      document.querySelectorAll(".tabbar a").forEach((a) =>
+        a.classList.toggle("active", a.dataset.tab === name));
+      if (name === "log") loadLog();
+    }
+    addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+    if (!(myMember.unlocks?.quest ?? true)) {
+      const qt = document.getElementById("tabbtn-quests");
+      qt.classList.add("locked");
+      qt.querySelector(".icon").textContent = "🔒";
+    }
+    if (!(myMember.unlocks?.goal ?? false)) {
+      document.getElementById("goal-card").classList.add("hidden");
+    }
+    showTab(location.hash.slice(1) || "home");
+
+    // ---------- おさいふ(リアルタイム) ----------
+    let wallet = { yen: 0, pt: 0 };
+    onSnapshot(walletRef(me), (snap) => {
+      if (!snap.exists()) return;
+      wallet = snap.data();
+      document.getElementById("bal-yen").textContent = wallet.yen.toLocaleString("ja-JP");
+      document.getElementById("bal-pt").textContent = wallet.pt.toLocaleString("ja-JP");
+      renderGoals();
+      updateQuizAvailability();
+    });
+
+    // ---------- 取引の表示ヘルパ ----------
+    function describeTxn(t) {
+      const isOut = t.fromMemberId === me;
+      const map = {
+        transfer: isOut
+          ? { emoji: "💸", label: `${mName(t.toMemberId)} に おくった` }
+          : { emoji: "💝", label: `${mName(t.fromMemberId)} から もらった` },
+        grant: { emoji: "🏦", label: "おこづかいが 入ったよ" },
+        gift: { emoji: "🎁", label: "プレゼントが とどいたよ" },
+        withdraw: { emoji: "👛", label: "おかねを うけとった(ひきだし)" },
+        quest: { emoji: "⭐", label: t.message ? `おてつだい「${t.message}」` : "おてつだい" },
+        interest: { emoji: "🪙", label: "りそくが ついたよ" },
+        quiz: { emoji: "✏️", label: "さんすうチャレンジ せいかい!" },
+        adjust: { emoji: "🔧", label: "ちょうせい" },
+      };
+      const d = map[t.type] ?? { emoji: "🧾", label: t.type };
+      return { ...d, isOut, sign: isOut ? "-" : "+" };
+    }
+    function txnHtml(t) {
+      const d = describeTxn(t);
+      const msg = t.type === "transfer" && t.message ? `<div class="muted">💬 ${esc(t.message)}</div>` : "";
+      return `<div class="txn-item">
+        <span class="t-emoji">${d.emoji}</span>
+        <div class="t-main">${esc(d.label)}${msg}<div class="t-date">${fmtDate(t.createdAt)}</div></div>
+        <span class="t-amount ${d.isOut ? "minus" : "plus"}">${d.sign}${fmtAmount(t.currency, t.amount)}</span>
+      </div>`;
+    }
+
+    // ホームの最近のきろく(直近5件)
+    onSnapshot(
+      query(famCol("transactions"), where("memberIds", "array-contains", me), orderBy("createdAt", "desc"), limit(5)),
+      (snap) => {
+        const el = document.getElementById("recent-txns");
+        if (snap.empty) return;
+        el.innerHTML = snap.docs.map((d) => txnHtml(d.data())).join("");
+      },
+      (e) => console.warn("recent txns:", e),
+    );
+
+    // ---------- ギフトけん ----------
+    onSnapshot(
+      query(famCol("tickets"), where("memberId", "==", me)),
+      (snap) => {
+        const docs = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((t) => t.status !== "void")
+          .sort((a, b) => (a.status === "used") - (b.status === "used") || (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+        const el = document.getElementById("ticket-list");
+        if (!docs.length) {
+          el.innerHTML = '<p class="muted">まだ けんがないよ</p>';
+          return;
+        }
+        el.innerHTML = docs.map((t) => `
+          <div class="ticket-card ${t.status}" data-id="${t.id}" data-approval="${t.approvalId ?? ""}">
+            <div class="emoji">${esc(t.emoji ?? "🎫")}</div>
+            <div class="title">${esc(t.title)}</div>
+            <div class="desc">${esc(t.desc ?? "")}</div>
+            ${t.status === "unused" ? '<button class="btn btn-primary btn-sm use-btn">つかう</button>' : ""}
+            ${t.status === "pending" ? '<div class="muted">おへんじまち…</div><button class="btn btn-ghost btn-sm cancel-btn">やっぱりやめる</button>' : ""}
+          </div>`).join("");
+        renderPendingInfo();
+      },
+    );
+
+    document.getElementById("ticket-list").addEventListener("click", async (e) => {
+      const card = e.target.closest(".ticket-card");
+      if (!card) return;
+      if (e.target.classList.contains("use-btn")) {
+        const title = card.querySelector(".title").textContent;
+        const ok = await confirmModal({
+          title: "けんを つかう?",
+          body: `「${esc(title)}」を つかうと おうちの人に れんらくがいくよ。`,
+          okLabel: "つかう!",
+        });
+        if (!ok) return;
+        await withBusy(e.target, () => requestTicketUse({ ticketId: card.dataset.id, memberId: me }));
+        toast("おうちの人に れんらくしたよ! おへんじをまってね", "ok");
+      }
+      if (e.target.classList.contains("cancel-btn")) {
+        await withBusy(e.target, () =>
+          cancelTicketRequest({ ticketId: card.dataset.id, approvalId: card.dataset.approval }));
+        toast("とりけしたよ");
+      }
+    });
+
+    // ---------- 承認まちの表示(ホーム) ----------
+    let myPendingApprovals = [];
+    onSnapshot(
+      query(famCol("approvals"), where("memberId", "==", me), where("status", "==", "pending")),
+      (snap) => {
+        myPendingApprovals = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        renderPendingInfo();
+        renderQuestPending();
+      },
+    );
+    function renderPendingInfo() {
+      const box = document.getElementById("pending-info");
+      box.classList.toggle("hidden", myPendingApprovals.length === 0);
+      document.getElementById("pending-list").textContent =
+        myPendingApprovals.length ? `${myPendingApprovals.length}けんの おねがいを おうちの人が みているよ` : "";
+    }
+
+    // ---------- クエスト ----------
+    let quests = [];
+    onSnapshot(query(famCol("quests"), where("active", "==", true)), (snap) => {
+      quests = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
+      renderQuests();
+      renderQuestPending();
+    });
+    const questById = (id) => quests.find((q) => q.id === id);
+
+    function renderQuests() {
+      document.getElementById("quest-list").innerHTML = quests.map((q) => `
+        <div class="quest-item" data-id="${q.id}">
+          <span class="emoji">${esc(q.emoji ?? "⭐")}</span>
+          <span class="title">${esc(q.title)}</span>
+          <span class="pt">+${q.points}pt</span>
+          <button class="btn btn-ok btn-sm report-btn">やった!</button>
+        </div>`).join("");
+    }
+    function renderQuestPending() {
+      const mine = myPendingApprovals.filter((a) => a.kind === "quest");
+      document.getElementById("quest-pending").innerHTML = mine.length
+        ? `<div class="card"><b>⏳ おへんじまち</b>` + mine.map((a) => {
+            const q = questById(a.refId);
+            return `<div class="quest-item" style="box-shadow:none;margin:6px 0">
+              <span class="emoji">${esc(q?.emoji ?? "⭐")}</span>
+              <span class="title">${esc(q?.title ?? "おてつだい")}</span>
+              <button class="btn btn-ghost btn-sm q-cancel-btn" data-id="${a.id}">とりけす</button>
+            </div>`;
+          }).join("") + `</div>`
+        : "";
+    }
+    document.getElementById("tab-quests").addEventListener("click", async (e) => {
+      if (e.target.classList.contains("report-btn")) {
+        const item = e.target.closest(".quest-item");
+        const q = questById(item.dataset.id);
+        await withBusy(e.target, () => reportQuest({ questId: item.dataset.id, memberId: me }));
+        toast(`「${q?.title ?? "おてつだい"}」を ほうこくしたよ!`, "ok");
+      }
+      if (e.target.classList.contains("q-cancel-btn")) {
+        await withBusy(e.target, () => cancelQuestRequest({ approvalId: e.target.dataset.id }));
+        toast("とりけしたよ");
+      }
+    });
+
+    // ---------- おくる(兄弟間送金) ----------
+    const siblings = [...members.entries()]
+      .filter(([id, m]) => m.role === "child" && id !== me)
+      .sort((a, b) => (a[1].sort ?? 0) - (b[1].sort ?? 0));
+    let sendTo = siblings[0]?.[0] ?? null;
+    let sendCur = "yen";
+    document.getElementById("send-to").innerHTML = siblings.map(([id, m], i) =>
+      `<button type="button" data-id="${id}" class="${i === 0 ? "selected" : ""}">${esc(m.name)}</button>`).join("")
+      || '<p class="muted">おくれる あいてが いないよ</p>';
+    document.getElementById("send-to").addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      sendTo = btn.dataset.id;
+      document.querySelectorAll("#send-to button").forEach((b) => b.classList.toggle("selected", b === btn));
+    });
+    document.getElementById("send-currency").addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      sendCur = btn.dataset.cur;
+      document.querySelectorAll("#send-currency button").forEach((b) => b.classList.toggle("selected", b === btn));
+    });
+    document.getElementById("send-btn").addEventListener("click", async (e) => {
+      const amount = parseInt(document.getElementById("send-amount").value, 10);
+      const message = document.getElementById("send-message").value.trim();
+      if (!sendTo) return toast("おくるあいてが いないよ", "error");
+      if (!Number.isInteger(amount) || amount <= 0) return toast("きんがくを 入れてね", "error");
+      if (wallet[sendCur] < amount) return toast("ざんだかが たりないよ", "error");
+      const ok = await confirmModal({
+        title: "おくる?",
+        body: `<b>${esc(mName(sendTo))}</b> に <b>${fmtAmount(sendCur, amount)}</b> おくるよ。いいかな?`,
+        okLabel: "おくる!",
+      });
+      if (!ok) return;
+      await withBusy(e.target, async () => {
+        try {
+          await transfer({ fromMemberId: me, toMemberId: sendTo, currency: sendCur, amount, message });
+          confetti(1500);
+          toast(`${mName(sendTo)} に おくったよ!`, "ok");
+          document.getElementById("send-amount").value = "";
+          document.getElementById("send-message").value = "";
+        } catch (err) {
+          console.error(err);
+          toast(err.message || "おくれなかったよ", "error");
+        }
+      });
+    });
+
+    // ---------- きろくタブ ----------
+    async function loadLog() {
+      try {
+        const snap = await getDocs(query(
+          famCol("transactions"),
+          where("memberIds", "array-contains", me),
+          orderBy("createdAt", "desc"),
+          limit(50),
+        ));
+        const txns = snap.docs.map((d) => d.data());
+        document.getElementById("txn-list").innerHTML =
+          txns.map(txnHtml).join("") || '<p class="muted">まだ きろくがないよ</p>';
+        drawBalanceChart(document.getElementById("balance-chart"), [...txns].reverse(), me, wallet);
+      } catch (e) {
+        console.error(e);
+        document.getElementById("txn-list").innerHTML =
+          '<p class="muted">きろくを よみこめなかったよ(インデックス作成中かも)</p>';
+      }
+    }
+
+    // ---------- 目標貯金 ----------
+    let goals = [];
+    if (myMember.unlocks?.goal) {
+      onSnapshot(query(famCol("goals"), where("memberId", "==", me)), (snap) => {
+        goals = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((g) => g.status !== "archived");
+        renderGoals();
+      });
+    }
+    function renderGoals() {
+      if (!myMember.unlocks?.goal) return;
+      const el = document.getElementById("goal-list");
+      el.innerHTML = goals.map((g) => {
+        const cur = wallet[g.currency] ?? 0;
+        const pct = Math.min(100, Math.floor((cur / g.targetAmount) * 100));
+        const done = cur >= g.targetAmount;
+        return `<div style="margin:10px 0">
+          <b>${esc(g.emoji ?? "🎯")} ${esc(g.title)}</b>
+          <span class="muted">(${fmtAmount(g.currency, g.targetAmount)})</span>
+          ${done ? "<span>🎉 たっせい!</span>" : ""}
+          <div class="goal-bar-wrap"><div class="goal-bar" style="width:${pct}%"></div></div>
+          <div class="muted">${pct}% (いま ${fmtAmount(g.currency, cur)})</div>
+        </div>`;
+      }).join("") || '<p class="muted">もくひょうを つくってみよう!</p>';
+    }
+    document.getElementById("goal-show-form").addEventListener("click", () => {
+      document.getElementById("goal-form").classList.remove("hidden");
+    });
+    document.getElementById("goal-add-btn").addEventListener("click", async (e) => {
+      const title = document.getElementById("goal-title").value.trim();
+      const amount = parseInt(document.getElementById("goal-amount").value, 10);
+      const currency = document.getElementById("goal-currency").value;
+      if (!title || !Number.isInteger(amount) || amount <= 0) return toast("なまえと きんがくを 入れてね", "error");
+      await withBusy(e.target, async () => {
+        await setDoc(doc(famCol("goals"), "gl" + shortId()), {
+          memberId: me, title, emoji: "🎯", currency, targetAmount: amount,
+          status: "active", createdAt: serverTimestamp(),
+        });
+        document.getElementById("goal-title").value = "";
+        document.getElementById("goal-amount").value = "";
+        toast("もくひょうを つくったよ!", "ok");
+      });
+    });
+
+    // ---------- 算数チャレンジ ----------
+    const quizSettingsSnap = await getDoc(settingsRef());
+    const bonusPt = quizSettingsSnap.data()?.quizBonusPt ?? 5;
+    const quiz = todaysQuiz(me, myMember.level ?? 1);
+    document.getElementById("quiz-q").textContent = quiz.question;
+    function updateQuizAvailability() {
+      const last = wallet.lastQuizAt?.toMillis?.() ?? 0;
+      const ready = Date.now() - last >= 20 * 3600 * 1000;
+      document.getElementById("quiz-btn").disabled = !ready;
+      document.getElementById("quiz-answer").disabled = !ready;
+      document.getElementById("quiz-note").textContent = ready
+        ? `せいかいすると +${bonusPt}pt!`
+        : "きょうのぶんは クリアずみ! また あしたね";
+    }
+    document.getElementById("quiz-btn").addEventListener("click", async (e) => {
+      const ans = parseInt(document.getElementById("quiz-answer").value, 10);
+      if (!Number.isInteger(ans)) return toast("こたえを 入れてね", "error");
+      if (ans !== quiz.answer) {
+        toast("ざんねん! もういちど かんがえてみよう", "error");
+        return;
+      }
+      await withBusy(e.target, async () => {
+        try {
+          await claimQuizReward({ memberId: me, bonusPt });
+          confetti(2000);
+          toast(`せいかい! +${bonusPt}pt ゲット!`, "ok");
+        } catch (err) {
+          console.error(err);
+          toast("きょうのぶんは もう もらっているよ。また あしたね");
+        }
+      });
+    });
+
+    // ---------- 利息の遅延実行 ----------
+    applyPendingInterest({ memberId: me, unlocked: !!myMember.unlocks?.interest })
+      .then((total) => {
+        if (total > 0) {
+          confetti(2500);
+          toast(`🪙 りそくの日! +${total}pt ふえたよ!`, "ok");
+        }
+      })
+      .catch((e) => console.warn("interest:", e));
+
+    // ---------- ギフト開封演出 ----------
+    const giftQueue = [];
+    let giftShowing = false;
+    onSnapshot(
+      query(famCol("gifts"), where("toMemberId", "==", me), where("seenAt", "==", null)),
+      (snap) => {
+        snap.docChanges().forEach((ch) => {
+          if (ch.type === "added") giftQueue.push({ id: ch.doc.id, ...ch.doc.data() });
+        });
+        showNextGift();
+      },
+    );
+
+    async function showNextGift() {
+      if (giftShowing || giftQueue.length === 0) return;
+      giftShowing = true;
+      const gift = giftQueue.shift();
+
+      let contentHtml = "";
+      if (gift.kind === "ticket") {
+        let t = null;
+        try {
+          const tSnap = await getDoc(famDoc("tickets", gift.refId));
+          t = tSnap.data();
+        } catch {}
+        contentHtml = `${esc(t?.emoji ?? "🎫")} ${esc(t?.title ?? "ギフトけん")}`;
+      } else {
+        contentHtml = `${gift.kind === "yen" ? "💴" : "⭐"} ${fmtAmount(gift.kind, gift.amount)}`;
+      }
+
+      const overlay = document.createElement("div");
+      overlay.className = "gift-overlay";
+      overlay.innerHTML = `
+        <div class="gift-from">${esc(mName(gift.fromMemberId))} から プレゼントが とどいたよ!</div>
+        <div class="gift-box" id="gift-box">🎁</div>
+        <div class="muted" style="color:#fff">タップして あけてみよう!</div>
+        <div id="gift-inner" class="hidden" style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div class="gift-content gift-open">${contentHtml}</div>
+          ${gift.message ? `<div class="gift-message">💌 ${esc(gift.message)}</div>` : ""}
+          <button class="btn btn-primary btn-big" id="gift-ok" style="margin-top:14px">やったー!</button>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      overlay.querySelector("#gift-box").addEventListener("click", () => {
+        overlay.querySelector("#gift-box").classList.add("hidden");
+        overlay.querySelectorAll(".muted")[0]?.classList.add("hidden");
+        overlay.querySelector("#gift-inner").classList.remove("hidden");
+        confetti(3000);
+      }, { once: true });
+
+      overlay.querySelector("#gift-ok").addEventListener("click", async () => {
+        try {
+          await updateDoc(famDoc("gifts", gift.id), { seenAt: serverTimestamp() });
+        } catch (e) {
+          console.warn("gift seen:", e);
+        }
+        overlay.remove();
+        giftShowing = false;
+        showNextGift();
+      });
+    }
+  </script>
+</body>
+</html>

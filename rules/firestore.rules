@@ -1,0 +1,479 @@
+rules_version = '2';
+
+// おこづかいバンク セキュリティルール
+//
+// 設計方針:
+//  - 守るのは「残高と元帳の整合性」。子(child)は厳密に、親(parent)は帳簿整合のみ、
+//    祖父母(giver)は「増やす操作」だけ許可する非対称設計。
+//  - wallet の更新は必ず同一バッチの transactions 作成とペア(lastTxnId ペアリング)。
+//    逆に transactions の作成も wallet 更新とペアでなければ拒否(幽霊取引の排除)。
+//  - __SETUP_KEY__ はデプロイ時に tools/deploy-rules.ps1 が実際の合言葉に置換する。
+//    ルール本文はクライアントから読めないため、合言葉は漏れない。
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========== グローバル: UID -> 家族 の逆引き ==========
+    match /uids/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      // 登録バッチ内で作られる devices ドキュメントと完全一致する場合のみ作成できる
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['familyId', 'memberId', 'role'])
+        && uidMatchesDevice(request.resource.data);
+      allow update: if false;
+      // 端末整理: その家族の親だけが消せる
+      allow delete: if request.auth != null
+        && get(/databases/$(database)/documents/families/$(resource.data.familyId)/devices/$(request.auth.uid)).data.role == 'parent';
+    }
+
+    function uidMatchesDevice(d) {
+      let dev = getAfter(/databases/$(database)/documents/families/$(d.familyId)/devices/$(request.auth.uid)).data;
+      return dev.memberId == d.memberId && dev.role == d.role;
+    }
+
+    // ========== 家族 ==========
+    match /families/{famId} {
+
+      // ---------- 共通関数 ----------
+      function setupKey() { return '__SETUP_KEY__'; }
+      function famRoot() { return /databases/$(database)/documents/families/$(famId); }
+      function myDevice() {
+        return get(/databases/$(database)/documents/families/$(famId)/devices/$(request.auth.uid)).data;
+      }
+      function isMember() {
+        return request.auth != null
+          && exists(/databases/$(database)/documents/families/$(famId)/devices/$(request.auth.uid));
+      }
+      function myRole() { return myDevice().role; }
+      function isParent() { return isMember() && myRole() == 'parent'; }
+      function isParentOrGiver() { return isMember() && (myRole() == 'parent' || myRole() == 'giver'); }
+      function myMemberId() { return myDevice().memberId; }
+
+      // セットアップ第1バッチ(family ルート + 自分の devices/uids)の最中か
+      function bootstrapping() {
+        return request.auth != null
+          && !exists(famRoot())
+          && getAfter(famRoot()).data.setupKey == setupKey()
+          && getAfter(famRoot()).data.createdBy == request.auth.uid;
+      }
+
+      function settingsData() {
+        return get(/databases/$(database)/documents/families/$(famId)/settings/config).data;
+      }
+      function memberData(m) {
+        return get(/databases/$(database)/documents/families/$(famId)/members/$(m)).data;
+      }
+      function txnAfter(id) {
+        return getAfter(/databases/$(database)/documents/families/$(famId)/transactions/$(id)).data;
+      }
+      function walletAfter(m) {
+        return getAfter(/databases/$(database)/documents/families/$(famId)/wallets/$(m)).data;
+      }
+      function ticketAfter(id) {
+        return getAfter(/databases/$(database)/documents/families/$(famId)/tickets/$(id)).data;
+      }
+      function approvalAfter(id) {
+        return getAfter(/databases/$(database)/documents/families/$(famId)/approvals/$(id)).data;
+      }
+      function deviceAfterSelf() {
+        return getAfter(/databases/$(database)/documents/families/$(famId)/devices/$(request.auth.uid)).data;
+      }
+
+      // ---------- family ルート ----------
+      allow get: if isParentOrGiver();
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.resource.data.setupKey == setupKey()
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isParent()
+        && request.resource.data.setupKey == resource.data.setupKey
+        && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if false;
+
+      // ---------- 設定 ----------
+      match /settings/{docId} {
+        allow read: if isMember();
+        allow create, update: if isParent()
+          && docId == 'config'
+          && request.resource.data.weeklyRateBp is int
+          && request.resource.data.weeklyRateBp >= 0
+          && request.resource.data.weeklyRateBp <= 10000
+          && request.resource.data.quizBonusPt is int
+          && request.resource.data.quizBonusPt >= 1
+          && request.resource.data.quizBonusPt <= 1000;
+        allow delete: if false;
+      }
+
+      // ---------- メンバー ----------
+      match /members/{memberId} {
+        allow read: if isMember();
+        allow create, update: if isParent()
+          && request.resource.data.role in ['parent', 'giver', 'child'];
+        allow delete: if isParent();
+      }
+
+      // ---------- 端末 ----------
+      match /devices/{uid} {
+        // 招待トークンが読めてしまうので親のみ(クライアントは uids/{uid} で自分のロールを知る)
+        allow read: if isParent();
+        allow create: if
+          (bootstrapping() && request.auth.uid == uid && request.resource.data.role == 'parent')
+          || registrationValid(uid);
+        allow update: if false;
+        allow delete: if isParent();
+      }
+
+      function inviteData(token) {
+        return get(/databases/$(database)/documents/families/$(famId)/invites/$(token)).data;
+      }
+      function inviteAfter(token) {
+        return getAfter(/databases/$(database)/documents/families/$(famId)/invites/$(token)).data;
+      }
+
+      function registrationValid(uid) {
+        let d = request.resource.data;
+        let inv = inviteData(d.inviteToken);
+        return request.auth != null && request.auth.uid == uid
+          && d.inviteToken is string
+          && inv.revoked == false
+          && (inv.get('expiresAt', null) == null || request.time < inv.expiresAt)
+          && d.role == inv.role
+          && d.memberId == inv.memberId
+          // 一回限りトークンは同一バッチでの消費(revoked=true 化)が必須
+          && (inv.reusable == true || inviteAfter(d.inviteToken).revoked == true);
+      }
+
+      // ---------- 招待トークン ----------
+      match /invites/{token} {
+        // トークン文字列を知っていること自体が能力。一覧は親のみ
+        allow get: if request.auth != null;
+        allow list: if isParent();
+        allow create: if isParent()
+          && request.resource.data.role in ['parent', 'giver', 'child']
+          && request.resource.data.memberId is string
+          && request.resource.data.reusable is bool
+          && request.resource.data.revoked == false;
+        allow update: if isParent() || consumptionValid(token);
+        allow delete: if isParent();
+      }
+
+      function consumptionValid(token) {
+        // 登録バッチによる一回限りトークンの消費のみ許可
+        let after = request.resource.data;
+        return request.auth != null
+          && resource.data.reusable == false
+          && resource.data.revoked == false
+          && after.diff(resource.data).affectedKeys().hasOnly(['revoked', 'usedBy'])
+          && after.revoked == true
+          && deviceAfterSelf().inviteToken == token;
+      }
+
+      // ---------- おさいふ ----------
+      match /wallets/{memberId} {
+        allow read: if isMember();
+        allow create: if isParent()
+          && request.resource.data.yen == 0
+          && request.resource.data.pt == 0
+          && request.resource.data.lastTxnId == '';
+        allow update: if isMember()
+          && (interestSkipValid(memberId) || txnPairedUpdateValid(memberId));
+        allow delete: if isParent();
+      }
+
+      // 利息が 0pt に丸まる週は lastInterestAt を7日進めるだけ(取引なし)
+      function interestSkipValid(memberId) {
+        let b = resource.data;
+        let a = request.resource.data;
+        return myRole() == 'child'
+          && myMemberId() == memberId
+          && a.diff(b).affectedKeys().hasOnly(['lastInterestAt'])
+          && a.lastInterestAt == b.lastInterestAt + duration.value(7, 'd')
+          && a.lastInterestAt <= request.time
+          && b.pt * settingsData().weeklyRateBp < 10000
+          && memberData(memberId).unlocks.interest == true;
+      }
+
+      // wallet 更新は同一バッチの取引ドキュメントとペアでなければならない
+      function txnPairedUpdateValid(memberId) {
+        let b = resource.data;
+        let a = request.resource.data;
+        let t = txnAfter(a.lastTxnId);
+        return a.lastTxnId != b.lastTxnId
+          && t.byUid == request.auth.uid
+          && a.yen >= 0 && a.pt >= 0
+          && (
+            (isParentOrGiver() && adultWalletChangeValid(memberId, b, a, t))
+            || (myRole() == 'child' && childWalletChangeValid(memberId, b, a, t))
+          );
+      }
+
+      function otherCurrencyUnchanged(b, a, cur) {
+        return (cur == 'yen' && a.pt == b.pt) || (cur == 'pt' && a.yen == b.yen);
+      }
+
+      function balanceAfterMatches(memberId, a, t) {
+        return (t.fromMemberId == memberId && t.balanceAfter.from == a[t.currency])
+            || (t.toMemberId == memberId && t.balanceAfter.to == a[t.currency]);
+      }
+
+      // 親: 帳簿整合のみ検証。祖父母(giver): さらに「増額のみ」に制限
+      function adultWalletChangeValid(memberId, b, a, t) {
+        return a.diff(b).affectedKeys().hasOnly(['yen', 'pt', 'lastTxnId'])
+          && (
+            (t.toMemberId == memberId && a[t.currency] == b[t.currency] + t.amount)
+            || (t.fromMemberId == memberId && a[t.currency] == b[t.currency] - t.amount)
+          )
+          && otherCurrencyUnchanged(b, a, t.currency)
+          && balanceAfterMatches(memberId, a, t)
+          && (myRole() == 'parent'
+              || (t.toMemberId == memberId && t.type in ['grant', 'gift']));
+      }
+
+      function childWalletChangeValid(memberId, b, a, t) {
+        return childTransferOut(memberId, b, a, t)
+          || childTransferIn(memberId, b, a, t)
+          || childInterest(memberId, b, a, t)
+          || childQuiz(memberId, b, a, t);
+      }
+
+      function childTransferOut(m, b, a, t) {
+        return t.type == 'transfer' && t.fromMemberId == m && m == myMemberId()
+          && a.diff(b).affectedKeys().hasOnly(['yen', 'pt', 'lastTxnId'])
+          && a[t.currency] == b[t.currency] - t.amount
+          && otherCurrencyUnchanged(b, a, t.currency)
+          && t.balanceAfter.from == a[t.currency];
+      }
+
+      function childTransferIn(m, b, a, t) {
+        return t.type == 'transfer' && t.toMemberId == m
+          && t.fromMemberId == myMemberId() && m != myMemberId()
+          && a.diff(b).affectedKeys().hasOnly(['yen', 'pt', 'lastTxnId'])
+          && a[t.currency] == b[t.currency] + t.amount
+          && otherCurrencyUnchanged(b, a, t.currency)
+          && t.balanceAfter.to == a[t.currency];
+      }
+
+      // 単利: 毎週 残高 × weeklyRateBp/10000(端数切り捨て)。7日きざみでしか進めない
+      function childInterest(m, b, a, t) {
+        return t.type == 'interest' && m == myMemberId() && t.toMemberId == m
+          && t.currency == 'pt'
+          && a.diff(b).affectedKeys().hasOnly(['pt', 'lastTxnId', 'lastInterestAt'])
+          && a.pt == b.pt + t.amount
+          && interestAmountValid(b.pt, t.amount)
+          && a.lastInterestAt == b.lastInterestAt + duration.value(7, 'd')
+          && a.lastInterestAt <= request.time
+          && memberData(m).unlocks.interest == true
+          && t.balanceAfter.to == a.pt;
+      }
+
+      // amount == floor(pt * rate / 10000) を除算なしで検証
+      function interestAmountValid(pt, amount) {
+        return amount * 10000 <= pt * settingsData().weeklyRateBp
+          && (amount + 1) * 10000 > pt * settingsData().weeklyRateBp;
+      }
+
+      // 算数チャレンジ: 20時間に1回、settings の固定ボーナスのみ
+      function childQuiz(m, b, a, t) {
+        return t.type == 'quiz' && m == myMemberId() && t.toMemberId == m
+          && t.currency == 'pt'
+          && t.amount == settingsData().quizBonusPt
+          && a.diff(b).affectedKeys().hasOnly(['pt', 'lastTxnId', 'lastQuizAt'])
+          && a.pt == b.pt + t.amount
+          && b.lastQuizAt <= request.time - duration.value(20, 'h')
+          && a.lastQuizAt == request.time
+          && t.balanceAfter.to == a.pt;
+      }
+
+      // ---------- 取引元帳(追記専用) ----------
+      match /transactions/{txnId} {
+        allow read: if isMember();
+        allow create: if isMember() && txnCreateValid(txnId);
+        allow update, delete: if false; // 親でも書き換え不可。訂正は adjust の逆仕訳で
+      }
+
+      function txnCreateValid(txnId) {
+        let t = request.resource.data;
+        return t.byUid == request.auth.uid
+          && t.amount is int && t.amount > 0
+          && t.currency in ['yen', 'pt']
+          && t.createdAt == request.time
+          && t.get('message', '') is string
+          && t.get('message', '').size() <= 200
+          && typeShapeValid(t)
+          && roleTypeValid(t)
+          && pairingValid(txnId, t);
+      }
+
+      // wallet 側も同一バッチでこの取引IDを指していなければならない(幽霊取引の排除)
+      function pairingValid(txnId, t) {
+        return (t.fromMemberId == null || walletAfter(t.fromMemberId).lastTxnId == txnId)
+          && (t.toMemberId == null || walletAfter(t.toMemberId).lastTxnId == txnId);
+      }
+
+      function typeShapeValid(t) {
+        return (t.type == 'transfer'
+                && t.fromMemberId is string && t.toMemberId is string
+                && t.fromMemberId != t.toMemberId
+                && t.memberIds == [t.fromMemberId, t.toMemberId])
+          || (t.type in ['grant', 'gift', 'interest', 'quiz', 'quest']
+                && t.fromMemberId == null && t.toMemberId is string
+                && t.memberIds == [t.toMemberId])
+          || (t.type == 'withdraw'
+                && t.toMemberId == null && t.fromMemberId is string
+                && t.memberIds == [t.fromMemberId])
+          || (t.type == 'adjust'
+                && ((t.fromMemberId == null && t.toMemberId is string && t.memberIds == [t.toMemberId])
+                    || (t.toMemberId == null && t.fromMemberId is string && t.memberIds == [t.fromMemberId])));
+      }
+
+      function roleTypeValid(t) {
+        return (myRole() == 'parent' && t.type in ['grant', 'gift', 'withdraw', 'adjust', 'quest'])
+          || (myRole() == 'giver' && t.type in ['grant', 'gift'])
+          || (myRole() == 'child' && t.type in ['transfer', 'interest', 'quiz']);
+      }
+
+      // ---------- ギフト券 ----------
+      match /tickets/{ticketId} {
+        allow read: if isMember();
+        allow create: if isParentOrGiver()
+          && request.resource.data.status == 'unused'
+          && request.resource.data.memberId is string;
+        allow update: if isParent() || childTicketUpdateValid(ticketId);
+        allow delete: if isParent();
+      }
+
+      function childTicketUpdateValid(ticketId) {
+        let b = resource.data;
+        let a = request.resource.data;
+        return isMember() && myRole() == 'child' && b.memberId == myMemberId()
+          && a.diff(b).affectedKeys().hasOnly(['status', 'approvalId'])
+          && (
+            // 使用申請: unused -> pending(同一バッチで承認リクエスト作成)
+            (b.status == 'unused' && a.status == 'pending'
+              && approvalAfter(a.approvalId).kind == 'ticket'
+              && approvalAfter(a.approvalId).refId == ticketId
+              && approvalAfter(a.approvalId).status == 'pending')
+            // 取り下げ: pending -> unused(同一バッチで承認を canceled に)
+            || (b.status == 'pending' && a.status == 'unused'
+              && approvalAfter(b.approvalId).status == 'canceled')
+          );
+      }
+
+      // ---------- 承認フロー(券・クエスト共通) ----------
+      match /approvals/{approvalId} {
+        allow read: if isMember();
+        allow create: if isParent() || childApprovalCreateValid(approvalId);
+        allow update: if parentDecisionValid() || childCancelValid();
+        allow delete: if isParent();
+      }
+
+      function childApprovalCreateValid(approvalId) {
+        let a = request.resource.data;
+        return isMember() && myRole() == 'child'
+          && a.memberId == myMemberId()
+          && a.status == 'pending'
+          && a.requestedAt == request.time
+          && (
+            (a.kind == 'ticket'
+              && ticketAfter(a.refId).memberId == myMemberId()
+              && ticketAfter(a.refId).status == 'pending'
+              && ticketAfter(a.refId).approvalId == approvalId)
+            || (a.kind == 'quest'
+              && get(/databases/$(database)/documents/families/$(famId)/quests/$(a.refId)).data.active == true)
+          );
+      }
+
+      function parentDecisionValid() {
+        let b = resource.data;
+        let a = request.resource.data;
+        return isParent()
+          && b.status == 'pending'
+          && a.status in ['approved', 'rejected']
+          && a.diff(b).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedByUid', 'note'])
+          && a.decidedByUid == request.auth.uid
+          && a.decidedAt == request.time;
+      }
+
+      function childCancelValid() {
+        let b = resource.data;
+        let a = request.resource.data;
+        return isMember() && myRole() == 'child'
+          && b.memberId == myMemberId()
+          && b.status == 'pending'
+          && a.status == 'canceled'
+          && a.diff(b).affectedKeys().hasOnly(['status'])
+          // 券の取り下げは同一バッチで券が unused に戻ること
+          && (b.kind == 'quest' || ticketAfter(b.refId).status == 'unused');
+      }
+
+      // ---------- クエスト単価表 ----------
+      match /quests/{questId} {
+        allow read: if isMember();
+        allow create, update: if isParent()
+          && request.resource.data.points is int
+          && request.resource.data.points >= 1
+          && request.resource.data.points <= 100000;
+        allow delete: if isParent();
+      }
+
+      // ---------- サプライズギフト ----------
+      match /gifts/{giftId} {
+        allow read: if isMember();
+        allow create: if isParentOrGiver() && giftCreateValid();
+        allow update: if giftSeenValid();
+        allow delete: if isParent();
+      }
+
+      function giftCreateValid() {
+        let g = request.resource.data;
+        return g.fromMemberId == myMemberId()
+          && g.toMemberId is string
+          && g.seenAt == null
+          && g.createdAt == request.time
+          && g.get('message', '') is string
+          && g.get('message', '').size() <= 500
+          && (
+            // お金のギフト: 同一バッチの gift 取引と一致
+            (g.kind in ['yen', 'pt']
+              && txnAfter(g.refId).type == 'gift'
+              && txnAfter(g.refId).toMemberId == g.toMemberId
+              && txnAfter(g.refId).currency == g.kind
+              && txnAfter(g.refId).amount == g.amount)
+            // 券のギフト: 同一バッチで作られた未使用の券と一致
+            || (g.kind == 'ticket'
+              && ticketAfter(g.refId).memberId == g.toMemberId
+              && ticketAfter(g.refId).status == 'unused')
+          );
+      }
+
+      function giftSeenValid() {
+        // 開封記録は宛先の子本人のみ。1回だけ
+        let b = resource.data;
+        let a = request.resource.data;
+        return isMember() && myRole() == 'child'
+          && b.toMemberId == myMemberId()
+          && b.seenAt == null
+          && a.diff(b).affectedKeys().hasOnly(['seenAt'])
+          && a.seenAt == request.time;
+      }
+
+      // ---------- 目標貯金 ----------
+      match /goals/{goalId} {
+        allow read: if isMember();
+        allow create: if isParent()
+          || (isMember() && myRole() == 'child'
+              && request.resource.data.memberId == myMemberId()
+              && request.resource.data.targetAmount is int
+              && request.resource.data.targetAmount >= 1
+              && request.resource.data.currency in ['yen', 'pt']);
+        allow update: if isParent()
+          || (isMember() && myRole() == 'child'
+              && resource.data.memberId == myMemberId()
+              && request.resource.data.memberId == myMemberId());
+        allow delete: if isParent()
+          || (isMember() && myRole() == 'child' && resource.data.memberId == myMemberId());
+      }
+    }
+  }
+}

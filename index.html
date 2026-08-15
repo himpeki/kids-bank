@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>おこづかいバンク</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+  <meta name="theme-color" content="#ff8fab">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/base.css">
+</head>
+<body>
+  <div class="container">
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <div>じゅんびちゅう...</div>
+    </div>
+
+    <div id="landing" class="hidden">
+      <div class="center" style="margin-top:40px">
+        <div style="font-size:64px">🏦🎁</div>
+        <h1>おこづかいバンク</h1>
+        <p class="muted">かぞくの ぎんこう&ギフトけん アプリ</p>
+      </div>
+      <div class="card">
+        <h3>📷 カードをもっているひと</h3>
+        <p>カードのQRコードを スマホのカメラで よみこんでね。じどうで とうろくがはじまるよ。</p>
+      </div>
+      <div class="card">
+        <h3>🔧 はじめて設定する保護者の方</h3>
+        <p class="muted">家族アカウントの新規作成はこちらから(あいことばが必要です)。</p>
+        <a class="btn btn-ghost" href="./setup.html">はじめての設定へ</a>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { resolveIdentity } from "./js/auth.js";
+
+    const params = new URLSearchParams(location.search);
+    const famId = params.get("f");
+    const token = params.get("t");
+
+    if (famId && token) {
+      // QRカード経由: 登録ページへ
+      location.replace(`./register.html?f=${encodeURIComponent(famId)}&t=${encodeURIComponent(token)}`);
+    } else {
+      resolveIdentity()
+        .then((ident) => {
+          if (!ident) {
+            document.getElementById("loading").classList.add("hidden");
+            document.getElementById("landing").classList.remove("hidden");
+          } else if (ident.role === "child") {
+            location.replace("./child.html");
+          } else {
+            location.replace("./parent.html");
+          }
+        })
+        .catch((e) => {
+          console.error(e);
+          document.getElementById("loading").innerHTML =
+            `<div>せつぞくエラー: ${e.message}<br><span class="muted">インターネットにつながっているか かくにんしてね</span></div>`;
+        });
+    }
+  </script>
+</body>
+</html>

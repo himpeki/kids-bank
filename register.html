@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>とうろく | おこづかいバンク</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+  <meta name="theme-color" content="#ff8fab">
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/base.css">
+</head>
+<body>
+  <div class="container">
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <div>カードをかくにんちゅう...</div>
+    </div>
+
+    <div id="confirm" class="hidden center" style="margin-top:40px">
+      <div style="font-size:64px">🪪✨</div>
+      <h1 id="welcome-name">...</h1>
+      <p id="welcome-role" class="muted"></p>
+      <div class="card" style="text-align:left">
+        <p>この スマホ・タブレットを <b id="welcome-name2"></b> の たんまつとして とうろくするよ。いいかな?</p>
+      </div>
+      <button id="register-btn" class="btn btn-primary btn-big">とうろくする!</button>
+    </div>
+
+    <div id="done" class="hidden center" style="margin-top:40px">
+      <div style="font-size:64px">🎉</div>
+      <h1>とうろくかんりょう!</h1>
+      <div class="card" style="text-align:left">
+        <h3>📌 だいじなおねがい</h3>
+        <p>この画面を <b>「ホームがめんに追加」</b> しておいてね。まいにち アイコンから ひらけるようになるよ。</p>
+        <p class="muted">iPhone: 共有ボタン(□↑)→「ホーム画面に追加」<br>Android: メニュー(⋮)→「ホーム画面に追加」</p>
+      </div>
+      <button id="go-btn" class="btn btn-primary btn-big">はじめる!</button>
+    </div>
+
+    <div id="error" class="hidden center" style="margin-top:40px">
+      <div style="font-size:64px">😢</div>
+      <h1>とうろくできなかったよ</h1>
+      <p id="error-msg" class="card"></p>
+      <a class="btn btn-ghost" href="./index.html">さいしょにもどる</a>
+    </div>
+  </div>
+
+  <script type="module">
+    import { db, doc, getDoc, setFamilyId } from "./js/db.js";
+    import { resolveIdentity, registerWithInvite } from "./js/auth.js";
+    import { toast, withBusy, esc } from "./js/ui.js";
+    import { ROLE_LABELS } from "./js/presets.js";
+
+    const params = new URLSearchParams(location.search);
+    const famId = params.get("f");
+    const token = params.get("t");
+
+    const show = (id) => {
+      for (const s of ["loading", "confirm", "done", "error"]) {
+        document.getElementById(s).classList.toggle("hidden", s !== id);
+      }
+    };
+    const fail = (msg) => {
+      document.getElementById("error-msg").textContent = msg;
+      show("error");
+    };
+
+    let destination = "./index.html";
+
+    async function main() {
+      if (!famId || !token) return fail("カードのじょうほうが たりないよ。QRコードを もういちど よみこんでね。");
+
+      // すでにこの端末が登録済みならそのまま入場
+      const existing = await resolveIdentity().catch(() => null);
+      if (existing && existing.familyId === famId) {
+        location.replace(existing.role === "child" ? "./child.html" : "./parent.html");
+        return;
+      }
+
+      const invSnap = await getDoc(doc(db, "families", famId, "invites", token)).catch(() => null);
+      if (!invSnap || !invSnap.exists()) return fail("しょうたいけんが見つからないよ。おうちの人に そうだんしてね。");
+      const inv = invSnap.data();
+      if (inv.revoked) return fail("このしょうたいけんは 使えなくなっているよ。おうちの人に そうだんしてね。");
+      if (inv.expiresAt && inv.expiresAt.toDate() < new Date()) return fail("しょうたいけんの きげんが きれているよ。おうちの人に あたらしいものを もらってね。");
+
+      // メンバー名は members から(登録前は読めないので invite の role 表示のみでも成立させる)
+      setFamilyId(famId);
+      let name = "";
+      try {
+        const mSnap = await getDoc(doc(db, "families", famId, "members", inv.memberId));
+        if (mSnap.exists()) name = mSnap.data().name;
+      } catch { /* 未登録端末は members を読めない場合がある */ }
+
+      document.getElementById("welcome-name").textContent = name ? `${name} さん、ようこそ!` : "ようこそ!";
+      document.getElementById("welcome-name2").textContent = name || ROLE_LABELS[inv.role] || "メンバー";
+      document.getElementById("welcome-role").textContent = `とうろくの しゅるい: ${ROLE_LABELS[inv.role] ?? inv.role}`;
+      destination = inv.role === "child" ? "./child.html" : "./parent.html";
+      show("confirm");
+    }
+
+    document.getElementById("register-btn").addEventListener("click", (e) =>
+      withBusy(e.target, async () => {
+        try {
+          await registerWithInvite(famId, token);
+          show("done");
+        } catch (err) {
+          console.error(err);
+          fail(err.message || "エラーがおきたよ。もういちど ためしてね。");
+        }
+      }),
+    );
+    document.getElementById("go-btn").addEventListener("click", () => location.replace(destination));
+
+    main().catch((e) => {
+      console.error(e);
+      fail(e.message || "エラーがおきたよ");
+    });
+  </script>
+</body>
+</html>
