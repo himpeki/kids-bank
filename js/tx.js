@@ -143,6 +143,25 @@ export async function approveTicketTransfer({ approvalId, ticketId, fromMemberId
   await batch.commit();
 }
 
+/** 子(交換相手): 券の交換に同意する */
+export async function consentTicketTransfer({ approvalId }) {
+  const batch = writeBatch(db);
+  batch.update(famDoc("approvals", approvalId), { peerConsent: true });
+  await batch.commit();
+}
+
+/** 子(交換相手): 券の交換をことわる(依頼者の券を戻し、依頼者に通知される) */
+export async function declineTicketTransfer({ approvalId, ticketId, name }) {
+  const batch = writeBatch(db);
+  batch.update(famDoc("approvals", approvalId), {
+    status: "rejected",
+    note: `${name}が こうかんを ことわったよ`,
+    seenAt: null,
+  });
+  batch.update(famDoc("tickets", ticketId), { status: "unused" });
+  await batch.commit();
+}
+
 /** 子: 却下されたお知らせを既読にする */
 export async function ackRejection({ approvalId }) {
   const batch = writeBatch(db);

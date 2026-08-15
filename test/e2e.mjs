@@ -217,6 +217,26 @@ try {
   );
   check("親の承認 → けんが じろうへ移動(たろうは5枚に)", true);
 
+  // ============ 4.6 けんの交換は相手の同意が必要(親の承認ボタンが無効) ============
+  await cp.$eval("#ticket-list .swap-btn", (el) => el.click());
+  await cp.waitForSelector(".modal-backdrop #tt-ok", { timeout: 10000 });
+  await cp.$eval('.tt-mode[data-mode="swap"]', (el) => el.click());
+  await cp.waitForSelector(".tt-want-btn", { timeout: 10000 }); // じろうが持つ券(さっき譲渡したもの)
+  await cp.$eval(".tt-want-btn", (el) => el.click());
+  await cp.$eval("#tt-ok", (el) => el.click());
+  await cp.waitForFunction(
+    () => document.querySelectorAll("#ticket-list .ticket-card.pending").length === 1,
+    { timeout: 15000 },
+  );
+  await pp.waitForSelector(".approval-item .approve-btn[disabled]", { timeout: 15000 });
+  check("交換リクエストは相手の同意待ち(親の承認ボタン無効)", true);
+  await cp.$eval("#ticket-list .cancel-btn", (el) => el.click());
+  await cp.waitForFunction(
+    () => document.querySelectorAll("#ticket-list .ticket-card.pending").length === 0,
+    { timeout: 15000 },
+  );
+  check("交換リクエストの取り下げ", true);
+
   // ============ 5. 親: サプライズギフト(500円) → 子: 開封 ============
   await pp.evaluate(() => { location.hash = "#gift"; });
   await sleep(300);
@@ -362,13 +382,15 @@ try {
   await pp.waitForSelector(".approval-item .reject-btn", { timeout: 15000 });
   await sleep(300);
   await pp.$eval(".approval-item .reject-btn", (el) => el.click());
-  await pp.waitForSelector('.modal [data-act="ok"]');
+  await pp.waitForSelector(".modal .pm-input", { timeout: 10000 });
+  await pp.type(".modal .pm-input", "きょうは がまんしてね");
   await pp.click('.modal [data-act="ok"]');
   await cp.waitForSelector("#reject-overlay #reject-ok", { timeout: 15000 });
+  const reasonShown = await cp.$eval("#reject-overlay", (el) => el.textContent.includes("がまんしてね"));
   await cp.screenshot({ path: `${SHOT_DIR}/child-reject.png` });
   await cp.$eval("#reject-ok", (el) => el.click());
   await cp.waitForFunction(() => !document.querySelector("#reject-overlay"), { timeout: 10000 });
-  check("却下が子に「おへんじ」として表示 → わかったで既読", true);
+  check("却下が理由つきで子に表示 → わかったで既読", reasonShown);
 
   // ============ 8.5 子: きろくタブ(月ごとの通帳+グラフ) ============
   await cp.evaluate(() => { location.hash = "#log"; });

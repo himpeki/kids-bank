@@ -59,6 +59,37 @@ export function confirmModal({ title, body = "", okLabel = "OK", cancelLabel = "
   });
 }
 
+/** 入力欄つきモーダル。okで入力文字列(空可)、キャンセルで null */
+export function promptModal({ title, body = "", placeholder = "", okLabel = "OK", cancelLabel = "やめる" }) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement("div");
+    wrap.className = "modal-backdrop";
+    wrap.innerHTML = `
+      <div class="modal">
+        <h3>${esc(title)}</h3>
+        <div class="modal-body">${body}</div>
+        <input type="text" class="pm-input" placeholder="${esc(placeholder)}" maxlength="100">
+        <div class="modal-actions" style="margin-top:14px">
+          <button class="btn btn-ghost" data-act="cancel">${esc(cancelLabel)}</button>
+          <button class="btn btn-primary" data-act="ok">${esc(okLabel)}</button>
+        </div>
+      </div>`;
+    const input = wrap.querySelector(".pm-input");
+    wrap.addEventListener("click", (e) => {
+      const act = e.target.dataset?.act;
+      if (act === "ok") {
+        wrap.remove();
+        resolve(input.value.trim());
+      } else if (act === "cancel" || e.target === wrap) {
+        wrap.remove();
+        resolve(null);
+      }
+    });
+    document.body.appendChild(wrap);
+    input.focus();
+  });
+}
+
 /** ボタン連打防止: 実行中は disabled にする */
 export async function withBusy(btn, fn) {
   if (btn.disabled) return;

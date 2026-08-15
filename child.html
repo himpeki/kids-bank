@@ -49,6 +49,8 @@
         <div id="pending-list" class="muted" style="margin-top:6px"></div>
       </div>
 
+      <div id="consent-box"></div>
+
       <div class="card" id="withdraw-card">
         <h3>👛 おかねに かえる</h3>
         <p class="muted">おこづかいざんだかを げんきんで もらいたいときは ここから おねがいしてね。</p>
@@ -188,7 +190,7 @@
     import {
       requestTransfer, requestTicketUse, cancelTicketRequest, reportQuest,
       cancelQuestRequest, claimQuizReward, requestWithdraw, redeemReward,
-      requestTicketTransfer, ackRejection,
+      requestTicketTransfer, ackRejection, consentTicketTransfer, declineTicketTransfer,
     } from "./js/tx.js";
     import { applyPendingInterest } from "./js/interest.js";
     import { toast, confirmModal, confetti, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy } from "./js/ui.js";
@@ -902,6 +904,72 @@
       });
     }
 
+    // ---------- 券の交換: 自分あての「おさそい」への同意/おことわり ----------
+    onSnapshot(
+      query(famCol("approvals"),
+        where("toMemberId", "==", me),
+        where("status", "==", "pending"),
+        where("kind", "==", "ticketTransfer")),
+      (snap) => {
+        const items = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((a) => a.wantTicketId); // 「あげる」は同意不要。交換のみ意思確認する
+        renderConsentBox(items);
+      },
+    );
+
+    async function renderConsentBox(items) {
+      const box = document.getElementById("consent-box");
+      if (!items.length) {
+        box.innerHTML = "";
+        return;
+      }
+      const rows = await Promise.all(items.map(async (a) => {
+        let theirTitle = "けん";
+        try {
+          const s = await getDoc(famDoc("tickets", a.refId));
+          theirTitle = s.data()?.title ?? "けん";
+        } catch (e) {
+          console.warn("consent ticket:", e);
+        }
+        const myTitle = myTickets.find((t) => t.id === a.wantTicketId)?.title ?? "あなたのけん";
+        if (a.peerConsent) {
+          return `<div class="card"><b>🔁 こうかんの おさそい</b>
+            <div class="muted" style="margin-top:4px">「${esc(theirTitle)}」⇔「${esc(myTitle)}」は おうちの人の おへんじまちだよ</div></div>`;
+        }
+        return `<div class="card">
+          <b>🔁 こうかんの おさそい</b>
+          <p style="margin:6px 0">${esc(mName(a.memberId))}が「${esc(theirTitle)}」と あなたの「${esc(myTitle)}」を こうかんしたいって! いい?</p>
+          <div class="row">
+            <button class="btn btn-primary consent-ok" data-id="${a.id}">いいよ!</button>
+            <button class="btn btn-ghost consent-no" data-id="${a.id}" data-ticket="${a.refId}">ことわる</button>
+          </div>
+        </div>`;
+      }));
+      box.innerHTML = rows.join("");
+    }
+
+    document.getElementById("consent-box").addEventListener("click", async (e) => {
+      if (e.target.classList.contains("consent-ok")) {
+        await withBusy(e.target, () => consentTicketTransfer({ approvalId: e.target.dataset.id }));
+        toast("いいよ!って つたえたよ。おうちの人のOKで こうかんされるよ", "ok");
+      }
+      if (e.target.classList.contains("consent-no")) {
+        const ok = await confirmModal({
+          title: "ことわる?",
+          body: "こうかんは なしになって、あいての けんは もどるよ。",
+          okLabel: "ことわる",
+        });
+        if (!ok) return;
+        await withBusy(e.target, () => declineTicketTransfer({
+          approvalId: e.target.dataset.id,
+          ticketId: e.target.dataset.ticket,
+          name: myMember.name,
+        }));
+        toast("ことわったよ");
+      }
+    });
+
     // ---------- 却下のお知らせ(おうちの人からのおへんじ) ----------
     const rejectQueue = [];
     let rejectShowing = false;
@@ -947,6 +1015,7 @@
         <div style="font-size:72px">😢</div>
         <div class="gift-from">おうちの人からの おへんじ</div>
         <div class="gift-message">${esc(desc)}は<br>こんかいは みとめられなかったよ。</div>
+        ${a.note ? `<div class="gift-message" style="margin-top:10px">💬 りゆう:「${esc(a.note)}」</div>` : ""}
         <button class="btn btn-ghost btn-big" id="reject-ok" style="margin-top:16px;max-width:300px">わかった</button>`;
       document.body.appendChild(overlay);
       overlay.querySelector("#reject-ok").addEventListener("click", async () => {

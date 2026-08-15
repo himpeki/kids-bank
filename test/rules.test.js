@@ -82,6 +82,10 @@ async function seed() {
       memberId: "taro", emoji: "🚗", title: "おでかけけん", desc: "",
       status: "unused", approvalId: null, createdByUid: UID.papa, createdAt: now, usedAt: null,
     });
+    b.set(fdoc(db, "tickets", "tk2"), {
+      memberId: "jiro", emoji: "🍦", title: "アイスけん", desc: "",
+      status: "unused", approvalId: null, createdByUid: UID.papa, createdAt: now, usedAt: null,
+    });
     b.set(fdoc(db, "transactions", "t-seed"), {
       type: "grant", currency: "yen", amount: 500, fromMemberId: null, toMemberId: "taro",
       memberIds: ["taro"], byUid: UID.papa, message: "", refId: null,
@@ -272,6 +276,40 @@ describe("券の譲渡・交換(承認制)", () => {
   it("自分宛の譲渡・他人の券の譲渡は拒否", async () => {
     await assertFails(ticketTransferReq(as(UID.taro), { to: "taro", approvalId: "att2" }));
     await assertFails(ticketTransferReq(as(UID.jiro), { approvalId: "att3" })); // tk1 はたろうの券
+  });
+
+  it("交換は相手の同意がないと親も承認できず、同意後は承認できる", async () => {
+    await ticketTransferReq(as(UID.taro), { want: "tk2" });
+    const decide = (status) => updateDoc(fdoc(as(UID.papa), "approvals", "att1"), {
+      status, decidedAt: serverTimestamp(), decidedByUid: UID.papa, note: "",
+    });
+    await assertFails(decide("approved"));                       // 同意なし承認は不可
+    await assertFails(updateDoc(fdoc(as(UID.taro), "approvals", "att1"), { peerConsent: true })); // 本人のなりすまし同意は不可
+    await assertSucceeds(updateDoc(fdoc(as(UID.jiro), "approvals", "att1"), { peerConsent: true }));
+    await assertSucceeds(decide("approved"));
+  });
+
+  it("相手はことわれる(券が戻り、依頼者に通知される)", async () => {
+    await ticketTransferReq(as(UID.taro), { want: "tk2" });
+    const db = as(UID.jiro);
+    const b = writeBatch(db);
+    b.update(fdoc(db, "approvals", "att1"), { status: "rejected", note: "じろうが ことわったよ", seenAt: null });
+    b.update(fdoc(db, "tickets", "tk1"), { status: "unused" });
+    await assertSucceeds(b.commit());
+  });
+
+  it("券を戻さないおことわり・第三者のおことわりは拒否", async () => {
+    await ticketTransferReq(as(UID.taro), { want: "tk2" });
+    // 券の巻き戻しなしのおことわりは不可
+    await assertFails(updateDoc(fdoc(as(UID.jiro), "approvals", "att1"), {
+      status: "rejected", note: "x", seenAt: null,
+    }));
+    // 依頼者本人が「おことわり」を装うのは不可
+    const db = as(UID.taro);
+    const b = writeBatch(db);
+    b.update(fdoc(db, "approvals", "att1"), { status: "rejected", note: "x", seenAt: null });
+    b.update(fdoc(db, "tickets", "tk1"), { status: "unused" });
+    await assertFails(b.commit());
   });
 
   it("親の承認で券の持ち主が変わり、ギフトが作られる", async () => {

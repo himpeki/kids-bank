@@ -213,7 +213,7 @@
       approveTicket, rejectTicket, approveQuest, rejectQuest, approveWithdraw,
       approveTransfer, approveTicketTransfer,
     } from "./js/tx.js";
-    import { toast, confirmModal, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy, fileToResizedDataUrl } from "./js/ui.js";
+    import { toast, confirmModal, promptModal, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy, fileToResizedDataUrl } from "./js/ui.js";
     import { TICKET_PRESETS, REWARD_PRESETS, ROLE_LABELS, THEMES, AVATAR_CHOICES } from "./js/presets.js";
 
     const ident = await requireRole("parent", "giver");
@@ -346,6 +346,7 @@
       }
       const rows = await Promise.all(items.map(async (a) => {
         let emoji = "❓", title = "", sub = "";
+        let approveDisabled = false;
         if (a.kind === "quest") {
           const q = questsCache.get(a.refId) ?? (await getDoc(famDoc("quests", a.refId))).data();
           emoji = q?.emoji ?? "⭐";
@@ -369,6 +370,12 @@
             ? `「${t?.title ?? "?"}」⇔「${want?.title ?? "?"}」を こうかんしたい`
             : `「${t?.title ?? "?"}」を ${mName(a.toMemberId)} にあげたい`;
           sub = `${mName(a.memberId)} → ${mName(a.toMemberId)} の券のやりとり`;
+          if (a.wantTicketId && !a.peerConsent) {
+            approveDisabled = true;
+            sub += ` / ⏳ ${mName(a.toMemberId)}の同意待ち`;
+          } else if (a.wantTicketId) {
+            sub += ` / ✅ ${mName(a.toMemberId)}同意済み`;
+          }
         } else {
           const t = (await getDoc(famDoc("tickets", a.refId))).data();
           emoji = t?.emoji ?? "🎫";
@@ -383,7 +390,7 @@
           <span class="a-emoji">${emoji}</span>
           <div class="a-main"><div class="a-title">${esc(title)}</div>
             <div class="muted">${esc(mName(a.memberId))} ・ ${sub} ・ ${fmtDate(a.requestedAt)}</div></div>
-          <button class="btn btn-ok btn-sm approve-btn">承認</button>
+          <button class="btn btn-ok btn-sm approve-btn" ${approveDisabled ? "disabled" : ""}>承認</button>
           <button class="btn btn-ghost btn-sm reject-btn">却下</button>
         </div>`;
       }));
@@ -410,12 +417,17 @@
         });
       }
       if (e.target.classList.contains("reject-btn")) {
-        const ok = await confirmModal({ title: "却下しますか?", body: "却下すると子どもの画面に「おへんじ」として表示されます。", okLabel: "却下する" });
-        if (!ok) return;
+        const note = await promptModal({
+          title: "却下しますか?",
+          body: "却下すると子どもの画面に「おへんじ」として表示されます。理由も一緒に伝えられます(任意)。",
+          placeholder: "例: 今月はおかいものが多かったから",
+          okLabel: "却下する",
+        });
+        if (note === null) return;
         await withBusy(e.target, async () => {
-          // 券がらみは券を未使用に戻す。却下は子の画面に「おへんじ」として表示される
-          if (kind === "ticket" || kind === "ticketTransfer") await rejectTicket({ approvalId: id, ticketId: ref, note: "" });
-          else await rejectQuest({ approvalId: id, note: "" });
+          // 券がらみは券を未使用に戻す
+          if (kind === "ticket" || kind === "ticketTransfer") await rejectTicket({ approvalId: id, ticketId: ref, note });
+          else await rejectQuest({ approvalId: id, note });
           toast("却下しました");
         });
       }

@@ -350,8 +350,21 @@ service cloud.firestore {
             && request.resource.data.status == 'unused'
             && request.resource.data.memberId is string)
           || childTicketRedeemValid(ticketId);
-        allow update: if isParent() || childTicketUpdateValid(ticketId);
+        allow update: if isParent() || childTicketUpdateValid(ticketId) || peerTicketRevertValid(ticketId);
         allow delete: if isParent();
+      }
+
+      // 交換のおことわりに伴う、依頼者の券の巻き戻し(相手の子のみ・同一バッチで approval が rejected になること)
+      function peerTicketRevertValid(ticketId) {
+        let b = resource.data;
+        let a = request.resource.data;
+        return isMember() && myRole() == 'child'
+          && b.status == 'pending' && a.status == 'unused'
+          && a.diff(b).affectedKeys().hasOnly(['status'])
+          && approvalAfter(b.approvalId).kind == 'ticketTransfer'
+          && approvalAfter(b.approvalId).status == 'rejected'
+          && approvalAfter(b.approvalId).toMemberId == myMemberId()
+          && approvalAfter(b.approvalId).refId == ticketId;
       }
 
       // ごほうび交換による券の取得: rewards のカタログ通りの内容・コストで、
@@ -391,8 +404,37 @@ service cloud.firestore {
       match /approvals/{approvalId} {
         allow read: if isMember();
         allow create: if isParent() || childApprovalCreateValid(approvalId);
-        allow update: if parentDecisionValid() || childCancelValid() || childAckValid();
+        allow update: if parentDecisionValid() || childCancelValid() || childAckValid()
+          || peerConsentValid() || peerDeclineValid();
         allow delete: if isParent();
+      }
+
+      // 券の交換: 相手の子の同意(pending中の交換リクエストに toMemberId 本人だけが付けられる)
+      function peerConsentValid() {
+        let b = resource.data;
+        let a = request.resource.data;
+        return isMember() && myRole() == 'child'
+          && b.kind == 'ticketTransfer'
+          && b.toMemberId == myMemberId()
+          && b.status == 'pending'
+          && b.get('wantTicketId', null) != null
+          && a.diff(b).affectedKeys().hasOnly(['peerConsent'])
+          && a.peerConsent == true;
+      }
+
+      // 券の交換: 相手の子による おことわり(依頼者の券を同一バッチで戻し、依頼者に通知)
+      function peerDeclineValid() {
+        let b = resource.data;
+        let a = request.resource.data;
+        return isMember() && myRole() == 'child'
+          && b.kind == 'ticketTransfer'
+          && b.toMemberId == myMemberId()
+          && b.status == 'pending'
+          && a.status == 'rejected'
+          && a.diff(b).affectedKeys().hasOnly(['status', 'note', 'seenAt'])
+          && a.get('note', '') is string && a.get('note', '').size() <= 200
+          && a.get('seenAt', null) == null
+          && ticketAfter(b.refId).status == 'unused';
       }
 
       // 却下されたお知らせの既読化(本人のみ・1回だけ)
@@ -453,8 +495,14 @@ service cloud.firestore {
           && b.status == 'pending'
           && a.status in ['approved', 'rejected']
           && a.diff(b).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedByUid', 'note', 'seenAt'])
+          && a.get('note', '') is string && a.get('note', '').size() <= 200
           && a.decidedByUid == request.auth.uid
-          && a.decidedAt == request.time;
+          && a.decidedAt == request.time
+          // 券の交換は相手の子の同意がない限り、親でも承認できない(却下は可)
+          && (a.status == 'rejected'
+              || b.kind != 'ticketTransfer'
+              || b.get('wantTicketId', null) == null
+              || b.get('peerConsent', false) == true);
       }
 
       function childCancelValid() {
