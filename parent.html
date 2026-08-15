@@ -213,7 +213,7 @@
       approveTicket, rejectTicket, approveQuest, rejectQuest, approveWithdraw,
     } from "./js/tx.js";
     import { toast, confirmModal, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy, fileToResizedDataUrl } from "./js/ui.js";
-    import { TICKET_PRESETS, REWARD_PRESETS, ROLE_LABELS } from "./js/presets.js";
+    import { TICKET_PRESETS, REWARD_PRESETS, ROLE_LABELS, THEMES, AVATAR_CHOICES } from "./js/presets.js";
 
     const ident = await requireRole("parent", "giver");
     const isGiver = ident.role === "giver";
@@ -710,6 +710,11 @@
       });
       const base = new URL("./index.html", location.href).href;
 
+      // 再描画で <details> が閉じないよう開閉状態を保持
+      const openIds = new Set(
+        [...document.querySelectorAll("#member-admin-list details[open]")].map((d) => d.dataset.mid),
+      );
+
       document.getElementById("member-admin-list").innerHTML = [...members.entries()]
         .sort((a, b) => (a[1].sort ?? 0) - (b[1].sort ?? 0))
         .map(([id, m]) => {
@@ -724,6 +729,33 @@
               </div>
             </div>`;
           }).join("") || '<p class="muted">有効な招待リンクなし</p>';
+
+          const kisekaeHtml = m.role !== "child" ? "" : `
+            <div style="margin-top:10px"><b>🎨 きせかえ(テーマ)</b>
+              <div class="swatch-row" style="margin-top:6px">
+                ${Object.entries(THEMES).map(([key, t]) => `
+                  <button class="swatch ks-theme ${(m.theme || "classic") === key ? "selected" : ""}"
+                    data-member="${id}" data-theme="${key}">${t.emoji} ${t.name}</button>`).join("")}
+              </div>
+              <b style="display:block;margin-top:8px">アバター</b>
+              <div class="swatch-row" style="margin-top:6px">
+                ${AVATAR_CHOICES.map((a) => `
+                  <button class="swatch avatar-swatch ks-avatar ${!m.avatarImageId && (m.avatar || "") === a ? "selected" : ""}"
+                    data-member="${id}" data-avatar="${a}">${a}</button>`).join("")}
+                ${[...imagesCache.entries()].map(([iid, im]) => `
+                  <button class="swatch img-swatch-btn ks-avatar-img ${m.avatarImageId === iid ? "selected" : ""}"
+                    data-member="${id}" data-img="${iid}">
+                    <img class="img-swatch" style="width:28px;height:28px;border-radius:50%" src="${im.dataUrl}" alt=""></button>`).join("")}
+              </div>
+              <b style="display:block;margin-top:8px">はいけい(カスタム画像)</b>
+              <div class="swatch-row" style="margin-top:6px">
+                <button class="swatch ks-bg ${!m.bgImageId ? "selected" : ""}" data-member="${id}" data-img="none">なし</button>
+                ${[...imagesCache.entries()].map(([iid, im]) => `
+                  <button class="swatch img-swatch-btn ks-bg ${m.bgImageId === iid ? "selected" : ""}"
+                    data-member="${id}" data-img="${iid}">
+                    <img class="img-swatch" src="${im.dataUrl}" alt=""></button>`).join("")}
+              </div>
+            </div>`;
 
           const unlockHtml = m.role === "child"
             ? Object.entries(UNLOCK_LABELS).map(([k, label]) => `
@@ -740,9 +772,10 @@
               </div>`
             : "";
 
-          return `<details class="member-detail">
+          return `<details class="member-detail" data-mid="${id}" data-mrole="${m.role}" ${openIds.has(id) ? "open" : ""}>
             <summary>${avatarHtml(id)} ${esc(m.name)} <span class="muted">(${ROLE_LABELS[m.role]})</span></summary>
             ${unlockHtml}
+            ${kisekaeHtml}
             <div style="margin-top:8px"><b>招待リンク</b>${inviteHtml}
               <button class="btn btn-accent btn-sm new-invite" data-member="${id}" data-role="${m.role}">
                 ${m.role === "child" ? "カード用リンクを再発行" : "招待リンクを発行(7日有効)"}</button>
@@ -752,7 +785,34 @@
     }
 
     document.getElementById("member-admin-list").addEventListener("click", async (e) => {
-      const t = e.target;
+      // 画像入りボタンは内側の <img> がクリック対象になるので button まで遡る
+      const t = e.target.closest("button") ?? e.target;
+      if (t.classList.contains("ks-theme")) {
+        await updateDoc(famDoc("members", t.dataset.member), { theme: t.dataset.theme });
+        toast("保存しました", "ok");
+        renderMemberAdmin();
+        return;
+      }
+      if (t.classList.contains("ks-avatar")) {
+        await updateDoc(famDoc("members", t.dataset.member), { avatar: t.dataset.avatar, avatarImageId: null });
+        toast("保存しました", "ok");
+        renderMemberAdmin();
+        return;
+      }
+      if (t.classList.contains("ks-avatar-img")) {
+        await updateDoc(famDoc("members", t.dataset.member), { avatarImageId: t.dataset.img });
+        toast("保存しました", "ok");
+        renderMemberAdmin();
+        return;
+      }
+      if (t.classList.contains("ks-bg")) {
+        await updateDoc(famDoc("members", t.dataset.member), {
+          bgImageId: t.dataset.img === "none" ? null : t.dataset.img,
+        });
+        toast("保存しました", "ok");
+        renderMemberAdmin();
+        return;
+      }
       if (t.classList.contains("show-qr")) {
         const wrap = document.createElement("div");
         wrap.className = "modal-backdrop";
@@ -868,6 +928,7 @@
           });
           await loadImages();
           renderImageAdmin();
+          renderMemberAdmin(); // きせかえの画像選択肢にも反映
           document.getElementById("image-file").value = "";
           document.getElementById("image-name").value = "";
           toast("アップロードしました(家族だけに表示されます)", "ok");

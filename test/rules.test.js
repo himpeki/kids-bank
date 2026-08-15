@@ -698,23 +698,12 @@ describe("セットアップと設定", () => {
     await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { level: 9 }));
   });
 
-  it("子は自分のきせかえ(テーマ・アバター)だけ変更できる", async () => {
-    await assertSucceeds(updateDoc(fdoc(as(UID.taro), "members", "taro"), { theme: "sky", avatar: "🦄" }));
-    // リストにないテーマは拒否
-    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { theme: "hacker" }));
-    // 他人のきせかえは拒否
-    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "jiro"), { theme: "sky" }));
-    // きせかえと同時にレベルを触るのは拒否
-    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { theme: "sky", level: 9 }));
-  });
-
-  it("子は自分の背景・アバター画像を設定/解除できる", async () => {
-    await assertSucceeds(updateDoc(fdoc(as(UID.taro), "members", "taro"), {
-      bgImageId: "img1", avatarImageId: "img1",
+  it("きせかえ(テーマ・アバター・背景)は親のみ変更でき、子は変更できない", async () => {
+    await assertSucceeds(updateDoc(fdoc(as(UID.papa), "members", "taro"), {
+      theme: "sky", avatar: "🦄", bgImageId: "img1", avatarImageId: null,
     }));
-    await assertSucceeds(updateDoc(fdoc(as(UID.taro), "members", "taro"), {
-      bgImageId: null, avatarImageId: null,
-    }));
-    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "jiro"), { bgImageId: "img1" }));
+    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { theme: "sky" }));
+    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { avatar: "🐰" }));
+    await assertFails(updateDoc(fdoc(as(UID.taro), "members", "taro"), { bgImageId: "img1" }));
   });
 });

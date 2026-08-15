@@ -260,16 +260,21 @@ body.child-mode[data-theme="mint"] {
 /* ロックされたタブ・機能 */
 .locked { opacity: 0.45; pointer-events: none; }
 
-/* カスタム背景(家族限定画像)。::before の固定レイヤーに白いウォッシュを重ねて文字を読みやすく */
+/* カスタム背景(家族限定画像)。::before の固定レイヤーに薄い白ウォッシュを重ねて文字を読みやすく。
+   body 自身の背景は透明にしないと ::before(z-index:-1)が隠れるので注意 */
+body.child-mode.custom-bg { background: transparent; }
 body.child-mode.custom-bg::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   background:
-    linear-gradient(rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.9)),
+    linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.6)),
     var(--custom-bg-url) center / cover no-repeat;
 }
+/* 背景が透けて見えるよう、カードとタブを少しだけ半透明に */
+body.child-mode.custom-bg .card { background: rgba(255, 255, 255, 0.9); }
+body.child-mode.custom-bg .tabbar { background: rgba(255, 255, 255, 0.94); }
 
 /* きせかえ */
 .swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }

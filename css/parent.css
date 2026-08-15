@@ -74,6 +74,23 @@ body.parent-mode { background: #f6f4f0; padding-bottom: 84px; }
 details.member-detail { border-bottom: 1px solid var(--c-line); padding: 8px 0; }
 details.member-detail summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
 
+/* きせかえ設定用スウォッチ */
+.swatch-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatch {
+  border: 2px solid var(--c-line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.swatch.selected { border-color: var(--c-accent); background: #eef5ff; }
+.swatch.avatar-swatch { font-size: 20px; padding: 4px 8px; }
+.swatch.img-swatch-btn { padding: 3px; }
+.img-swatch { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; display: block; }
+
 .image-thumb-item { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; margin: 4px; }
 .image-thumb {
   width: 72px;

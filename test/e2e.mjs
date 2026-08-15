@@ -109,6 +109,26 @@ try {
   );
   check("親がカスタム画像をアップロード(自動縮小)", true);
 
+  // ============ 2.8 親: たろうのきせかえを設定(テーマ・アバター画像・背景) ============
+  await pp.waitForSelector('#member-admin-list details[data-mrole="child"]', { timeout: 15000 });
+  await pp.$$eval('#member-admin-list details[data-mrole="child"]', (ds) => { ds[0].open = true; });
+  await pp.$eval('#member-admin-list details[data-mrole="child"] .ks-theme[data-theme="sky"]', (el) => el.click());
+  await pp.waitForFunction(
+    () => !!document.querySelector('#member-admin-list .ks-theme[data-theme="sky"].selected'),
+    { timeout: 15000 },
+  );
+  await pp.$eval('#member-admin-list details[data-mrole="child"] .ks-avatar-img', (el) => el.click());
+  await pp.waitForFunction(
+    () => !!document.querySelector("#member-admin-list .ks-avatar-img.selected"),
+    { timeout: 15000 },
+  );
+  await pp.$eval('#member-admin-list details[data-mrole="child"] .ks-bg:not([data-img="none"])', (el) => el.click());
+  await pp.waitForFunction(
+    () => !!document.querySelector('#member-admin-list .ks-bg.selected:not([data-img="none"])'),
+    { timeout: 15000 },
+  );
+  check("親が たろうのきせかえを設定(そらいろ+画像アバター+背景)", true);
+
   // ============ 3. 子: カードURLで端末登録 ============
   const cctx = await browser.createBrowserContext();
   const cp = await cctx.newPage();
@@ -125,23 +145,11 @@ try {
   );
   check("子端末の登録と子ホーム表示(たろう)", true);
 
-  // ============ 3.5 子: きせかえ(テーマ・アバター) ============
-  await cp.$eval('#theme-list [data-theme="sky"]', (el) => el.click());
-  await cp.waitForFunction(() => document.body.dataset.theme === "sky", { timeout: 10000 });
-  await cp.$eval('#avatar-list [data-avatar="🦄"]', (el) => el.click());
-  await cp.waitForFunction(
-    () => document.getElementById("my-avatar").textContent === "🦄",
-    { timeout: 10000 },
-  );
-  check("きせかえ(そらいろテーマ+アバター🦄)", true);
-
-  // カスタム画像: 背景とアバターに設定
-  await cp.waitForSelector('#bg-list [data-bg]:not([data-bg="none"])', { timeout: 15000 });
-  await cp.$eval('#bg-list [data-bg]:not([data-bg="none"])', (el) => el.click());
-  await cp.waitForFunction(() => document.body.classList.contains("custom-bg"), { timeout: 10000 });
-  await cp.$eval("#avatar-list [data-avatar-img]", (el) => el.click());
-  await cp.waitForFunction(() => !!document.querySelector("#my-avatar img"), { timeout: 10000 });
-  check("カスタム画像を背景+アバターに適用", true);
+  // ============ 3.5 子: 親が設定したきせかえが反映されている ============
+  await cp.waitForFunction(() => document.body.dataset.theme === "sky", { timeout: 15000 });
+  await cp.waitForFunction(() => document.body.classList.contains("custom-bg"), { timeout: 15000 });
+  await cp.waitForFunction(() => !!document.querySelector("#my-avatar img"), { timeout: 15000 });
+  check("親が設定したきせかえ(テーマ・背景・画像アバター)が子に反映", true);
   await cp.screenshot({ path: `${SHOT_DIR}/child-theme.png` });
 
   // 券6枚が見えるか
