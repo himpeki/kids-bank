@@ -502,10 +502,11 @@
     function renderQuestAdmin() {
       const items = [...questsCache.entries()].sort((a, b) => (a[1].sort ?? 0) - (b[1].sort ?? 0));
       document.getElementById("quest-admin-list").innerHTML = items.map(([id, q]) => `
-        <div class="list-item">
+        <div class="list-item" data-id="${id}">
           <span>${esc(q.emoji ?? "⭐")}</span>
           <div class="li-main">${esc(q.title)} <b>${q.points}pt</b>
             ${q.active ? "" : '<span class="muted">[停止中]</span>'}</div>
+          <button class="btn btn-ghost btn-sm edit-quest" data-id="${id}">編集</button>
           <button class="btn btn-ghost btn-sm toggle-quest" data-id="${id}" data-active="${q.active}">
             ${q.active ? "停止" : "再開"}</button>
         </div>`).join("") || '<p class="muted">クエストがありません</p>';
@@ -515,6 +516,32 @@
         await updateDoc(famDoc("quests", e.target.dataset.id), { active: e.target.dataset.active !== "true" });
         await loadQuests();
         renderQuestAdmin();
+      }
+      if (e.target.classList.contains("edit-quest")) {
+        const q = questsCache.get(e.target.dataset.id);
+        const item = e.target.closest(".list-item");
+        item.innerHTML = `
+          <input class="eq-emoji" value="${esc(q.emoji ?? "⭐")}" maxlength="4" style="max-width:70px">
+          <input class="eq-title" value="${esc(q.title)}" maxlength="30">
+          <input class="eq-points" type="number" value="${q.points}" min="1" inputmode="numeric" style="max-width:80px">
+          <button class="btn btn-ok btn-sm save-quest" data-id="${item.dataset.id}">保存</button>
+          <button class="btn btn-ghost btn-sm cancel-quest-edit">✕</button>`;
+      }
+      if (e.target.classList.contains("cancel-quest-edit")) renderQuestAdmin();
+      if (e.target.classList.contains("save-quest")) {
+        const item = e.target.closest(".list-item");
+        const title = item.querySelector(".eq-title").value.trim();
+        const points = parseInt(item.querySelector(".eq-points").value, 10);
+        const emoji = item.querySelector(".eq-emoji").value.trim() || "⭐";
+        if (!title || !Number.isInteger(points) || points <= 0) {
+          return toast("名前とptを確認してください", "error");
+        }
+        await withBusy(e.target, async () => {
+          await updateDoc(famDoc("quests", e.target.dataset.id), { title, points, emoji });
+          await loadQuests();
+          renderQuestAdmin();
+          toast("保存しました", "ok");
+        });
       }
     });
     document.getElementById("new-quest-btn").addEventListener("click", async (e) => {

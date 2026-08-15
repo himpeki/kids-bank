@@ -79,6 +79,22 @@ try {
   );
   check("たんじょうびセット6枚を発行", true);
 
+  // ============ 2.5 親: クエスト単価の編集(みずやり 5pt → 7pt) ============
+  await pp.waitForFunction(
+    () => document.querySelectorAll("#quest-admin-list .list-item").length >= 6,
+    { timeout: 15000 },
+  );
+  await pp.$$eval("#quest-admin-list .edit-quest", (els) => els[els.length - 1].click()); // 最後=みずやり
+  await pp.waitForSelector("#quest-admin-list .eq-points");
+  await pp.$eval("#quest-admin-list .eq-points", (el) => { el.value = ""; });
+  await pp.type("#quest-admin-list .eq-points", "7");
+  await pp.$eval("#quest-admin-list .save-quest", (el) => el.click());
+  await pp.waitForFunction(
+    () => document.querySelector("#quest-admin-list").textContent.includes("7pt"),
+    { timeout: 15000 },
+  );
+  check("クエスト編集(みずやり 5pt → 7pt)", true);
+
   // ============ 3. 子: カードURLで端末登録 ============
   const cctx = await browser.createBrowserContext();
   const cp = await cctx.newPage();
