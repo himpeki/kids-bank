@@ -2,9 +2,9 @@
 // apiKey はサーバー秘密ではなく「どのプロジェクトか」の識別子なので、公開リポジトリに置いてよい。
 // データの保護は Firestore セキュリティルール(rules/firestore.rules)が担う。
 export const FIREBASE_CONFIG = {
-  apiKey: "__REPLACE_ME__",
-  authDomain: "__REPLACE_ME__.firebaseapp.com",
-  projectId: "__REPLACE_ME__",
+  apiKey: "AIzaSyDzB2V66ShhtR_NGtNaQd0QE6sABM1AO-4",
+  authDomain: "kids-bank-2ebd5.firebaseapp.com",
+  projectId: "kids-bank-2ebd5",
 };
 
 export const APP_NAME = "おこづかいバンク";
