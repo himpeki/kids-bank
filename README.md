@@ -98,6 +98,12 @@ npm run serve                  # ターミナル2: http://localhost:5500
 # → http://localhost:5500/setup.html を開く(localhostは自動でエミュレータ接続)
 # あいことばはテスト用の「test-setup-key」
 # スマホ実機から試す場合: http://<PCのIP>:5500/?emu=1
+
+# E2Eスモークテスト(ヘッドレスChromeで セットアップ→登録→券→承認→ギフト→送金→クエスト→クイズ→印刷 を一巡)
+# 事前: 上記のエミュレータ+静的サーバーを起動しておく
+node test/e2e.mjs
+# Node経由のChrome起動に失敗する環境では、先にChromeを常駐させてから実行する:
+#   chrome.exe --headless --remote-debugging-port=9333 --user-data-dir=%TEMP%\chrome-e2e "about:blank"
 ```
 
 - Firestoreエミュレータには Java 11+ が必要です。`.jre/` にポータブル版Temurin 21を配置済み(gitignore対象)。無い環境では `tools/test.ps1` 実行前に https://adoptium.net から入手してください。

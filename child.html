@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="./icons/icon-192.png">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>おこづかいバンク</title>
   <link rel="manifest" href="./manifest.webmanifest">
@@ -187,6 +188,11 @@
       document.getElementById("goal-card").classList.add("hidden");
     }
     showTab(location.hash.slice(1) || "home");
+
+    // ---------- 設定(クイズボーナス等)は wallet リスナーより先に読む ----------
+    const settingsSnap = await getDoc(settingsRef());
+    const bonusPt = settingsSnap.data()?.quizBonusPt ?? 5;
+    const quiz = todaysQuiz(me, myMember.level ?? 1);
 
     // ---------- おさいふ(リアルタイム) ----------
     let wallet = { yen: 0, pt: 0 };
@@ -456,9 +462,6 @@
     });
 
     // ---------- 算数チャレンジ ----------
-    const quizSettingsSnap = await getDoc(settingsRef());
-    const bonusPt = quizSettingsSnap.data()?.quizBonusPt ?? 5;
-    const quiz = todaysQuiz(me, myMember.level ?? 1);
     document.getElementById("quiz-q").textContent = quiz.question;
     function updateQuizAvailability() {
       const last = wallet.lastQuizAt?.toMillis?.() ?? 0;

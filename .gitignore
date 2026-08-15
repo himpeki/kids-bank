@@ -1,5 +1,6 @@
 node_modules/
 .jre/
+test/e2e-shots/
 package-lock.json.bak
 rules/setup-key.local.txt
 rules/firestore.deploy.rules

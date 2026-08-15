@@ -163,7 +163,7 @@ body.child-mode {
 .gift-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(45, 30, 50, 0.78);
+  background: rgba(40, 26, 46, 0.94);
   display: flex;
   flex-direction: column;
   align-items: center;
