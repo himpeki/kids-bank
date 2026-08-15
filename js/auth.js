@@ -14,7 +14,7 @@ import {
   shortId,
 } from "./db.js";
 import { DEFAULT_SETTINGS } from "./config.js";
-import { QUEST_PRESETS } from "./presets.js";
+import { QUEST_PRESETS, REWARD_PRESETS } from "./presets.js";
 
 const LS_IDENTITY = "okozukai.identity";
 
@@ -165,6 +165,13 @@ export async function createFamily({ setupKey, familyName, selfName, members }) 
   QUEST_PRESETS.forEach((q, i) => {
     batch2.set(doc(db, "families", famId, "quests", "q" + shortId()), {
       ...q,
+      active: true,
+      sort: i,
+    });
+  });
+  REWARD_PRESETS.forEach((r, i) => {
+    batch2.set(doc(db, "families", famId, "rewards", "r" + shortId()), {
+      ...r,
       active: true,
       sort: i,
     });

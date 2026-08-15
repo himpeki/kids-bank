@@ -181,6 +181,38 @@ try {
   );
   check("クエスト報告 → 親承認 → +10pt", true);
 
+  // ============ 7.5 ごほうびショップ: 親が追加 → 子がptで交換 ============
+  await pp.evaluate(() => { location.hash = "#manage"; });
+  await pp.waitForSelector("#new-reward-title", { timeout: 15000 });
+  await pp.$$eval("#tab-manage details", (ds) => ds.forEach((d) => { d.open = true; }));
+  await pp.type("#new-reward-title", "テストごほうび");
+  await pp.type("#new-reward-points", "10");
+  await pp.$eval("#new-reward-btn", (el) => el.click());
+  await pp.waitForFunction(
+    () => document.querySelector("#reward-admin-list")?.textContent.includes("テストごほうび"),
+    { timeout: 15000 },
+  );
+  check("親がごほうび(10pt)を追加", true);
+
+  await cp.evaluate(() => { location.hash = "#tickets"; });
+  await cp.waitForFunction(
+    () => [...document.querySelectorAll("#shop-list .shop-btn")].some((b) => !b.disabled),
+    { timeout: 15000 },
+  );
+  await cp.$$eval("#shop-list .shop-btn", (els) => els.find((b) => !b.disabled).click());
+  await cp.waitForSelector('.modal [data-act="ok"]');
+  await cp.click('.modal [data-act="ok"]');
+  await cp.waitForFunction(
+    () => document.getElementById("bal-pt").textContent === "0",
+    { timeout: 15000 },
+  );
+  await cp.waitForFunction(
+    () => [...document.querySelectorAll("#ticket-list .ticket-card .title")]
+      .some((t) => t.textContent === "テストごほうび"),
+    { timeout: 15000 },
+  );
+  check("子がポイントで券と交換(pt 10→0、券が届く)", true);
+
   // ============ 8. 子: 算数チャレンジ ============
   await cp.evaluate(() => { location.hash = "#home"; });
   const q = await cp.$eval("#quiz-q", (el) => el.textContent);
@@ -195,45 +227,80 @@ try {
   await cp.type("#quiz-answer", String(ans));
   await cp.click("#quiz-btn");
   await cp.waitForFunction(
-    () => document.getElementById("bal-pt").textContent === "15",
+    () => document.getElementById("bal-pt").textContent === "5",
     { timeout: 15000 },
   );
-  check("算数チャレンジ正解 → +5pt(合計15pt)", true);
+  check("算数チャレンジ正解 → +5pt", true);
   await cp.screenshot({ path: `${SHOT_DIR}/child-final.png` });
 
-  // ============ 8.5 子: きろくタブ(おこづかい帳+グラフ) ============
-  await cp.evaluate(() => { location.hash = "#log"; });
-  // ここまでの たろうの取引 = ギフト500円 + 送金100円 + クエスト10pt + クイズ5pt の4件
+  // ============ 8.2 子: ひきだし申請 → 親: 承認(400円→250円) ============
+  await cp.type("#withdraw-amount", "150");
+  await cp.$eval("#withdraw-btn", (el) => el.click());
+  await cp.waitForSelector('.modal [data-act="ok"]');
+  await cp.click('.modal [data-act="ok"]');
   await cp.waitForFunction(
-    () => document.querySelectorAll("#txn-list .txn-item").length >= 4,
+    () => document.querySelectorAll("#withdraw-pending .w-cancel-btn").length === 1,
     { timeout: 15000 },
   );
+  check("ひきだし申請(150円)が承認待ちに", true);
+
+  await pp.evaluate(() => { location.hash = "#approvals"; });
+  await pp.waitForSelector(".approval-item .approve-btn", { timeout: 15000 });
+  await sleep(300);
+  await pp.$eval(".approval-item .approve-btn", (el) => el.click());
+  await cp.waitForFunction(
+    () => document.getElementById("bal-yen").textContent === "250",
+    { timeout: 15000 },
+  );
+  check("親の承認 → 残高400円→250円(現金手渡し)", true);
+
+  // ============ 8.5 子: きろくタブ(月ごとの通帳+グラフ) ============
+  await cp.evaluate(() => { location.hash = "#log"; });
+  // 今月のおこづかい(円)の行 = ギフト+500 / 送金-100 / ひきだし-150 の3行
+  await cp.waitForFunction(
+    () => document.querySelectorAll("#passbook-body tr .pb-balance").length >= 3,
+    { timeout: 15000 },
+  );
+  const lastYenBalance = await cp.$$eval("#passbook-body tr", (trs) =>
+    trs[trs.length - 1].querySelector(".pb-balance")?.textContent);
+  check("通帳(円)の最終残高が250", lastYenBalance === "250");
   const chartDrawn = await cp.evaluate(() => {
     const c = document.getElementById("balance-chart");
     return c && c.width > 0 && c.height > 0;
   });
-  check("おこづかい帳に取引履歴・残高グラフ描画", chartDrawn);
+  check("残高グラフ描画", chartDrawn);
 
-  // グラフの通貨切替(おこづかい ⇔ ポイント)
+  // 通貨切替: ポイントの通帳(クエスト+10 / 交換-10 / クイズ+5 の3行)
   await cp.$eval('#chart-currency [data-cur="pt"]', (el) => el.click());
   await sleep(400);
-  const ptSelected = await cp.$eval('#chart-currency [data-cur="pt"]', (el) =>
-    el.classList.contains("selected"));
-  check("グラフをポイント表示に切替", ptSelected);
+  const ptRows = await cp.$$eval("#passbook-body tr .pb-balance", (els) => els.length);
+  const lastPtBalance = await cp.$$eval("#passbook-body tr", (trs) =>
+    trs[trs.length - 1].querySelector(".pb-balance")?.textContent);
+  check("ポイントの通帳に切替(3行・最終残高5)", ptRows >= 3 && lastPtBalance === "5");
   await cp.screenshot({ path: `${SHOT_DIR}/child-log.png` });
 
-  // 取引が50件未満なら「もっとみる」は出ない
-  const moreHidden = await cp.$eval("#txn-more", (el) => el.classList.contains("hidden"));
-  check("取引50件未満では「もっとみる」非表示", moreHidden);
+  // 月ナビ: 前の月は空、次の月で今月に戻る
+  await cp.$eval("#month-prev", (el) => el.click());
+  await cp.waitForFunction(
+    () => document.querySelector("#passbook-body").textContent.includes("きろくは ないよ"),
+    { timeout: 15000 },
+  );
+  check("前の月へ移動(空の通帳)", true);
+  await cp.$eval("#month-next", (el) => el.click());
+  await cp.waitForFunction(
+    () => document.querySelectorAll("#passbook-body tr .pb-balance").length >= 3,
+    { timeout: 15000 },
+  );
+  check("次の月で今月に戻る", true);
 
   // ============ 9. 親: ダッシュボード最終確認 ============
   await pp.evaluate(() => { location.hash = "#home"; });
   await pp.waitForFunction(
-    () => document.querySelector("#kid-cards")?.textContent.includes("400円"),
+    () => document.querySelector("#kid-cards")?.textContent.includes("250円"),
     { timeout: 15000 },
   );
   await pp.screenshot({ path: `${SHOT_DIR}/parent-dashboard.png` });
-  check("親ダッシュボードに残高反映(たろう400円)", true);
+  check("親ダッシュボードに残高反映(たろう250円)", true);
 
   // ============ 10. 親: QRカード印刷ページ ============
   await pp.goto(`${BASE}/print.html`, { waitUntil: "networkidle2" });

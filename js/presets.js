@@ -19,4 +19,13 @@ export const QUEST_PRESETS = [
   { emoji: "🌱", title: "みずやり", points: 5 },
 ];
 
+// ポイントの使い道(ごほうびショップ)。子はポイントを消費して券と交換できる
+export const REWARD_PRESETS = [
+  { emoji: "🎲", title: "かぞくでボードゲームけん", costPt: 50 },
+  { emoji: "🍨", title: "アイスけん", costPt: 60 },
+  { emoji: "📺", title: "どうが30ぷんけん", costPt: 80 },
+  { emoji: "🎮", title: "ゲーム30ぷんけん", costPt: 100 },
+  { emoji: "🌙", title: "よふかし15ふんけん", costPt: 120 },
+];
+
 export const ROLE_LABELS = { parent: "おうちの人", giver: "おくる人(サポーター)", child: "こども" };

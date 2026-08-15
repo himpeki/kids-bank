@@ -21,10 +21,11 @@ const STYLES = {
  * @param canvas   描画先 canvas
  * @param txns     この子が関わる取引(createdAt 昇順)
  * @param memberId 対象の子
- * @param wallet   現在の残高 {yen, pt}
- * @param mode     "yen" | "pt" 表示する通貨
+ * @param wallet    現在の残高 {yen, pt}
+ * @param mode      "yen" | "pt" 表示する通貨
+ * @param appendNow 末尾に現在残高の点「いま」を足すか(今月表示のときだけ true)
  */
-export function drawBalanceChart(canvas, txns, memberId, wallet, mode = "yen") {
+export function drawBalanceChart(canvas, txns, memberId, wallet, mode = "yen", appendNow = true) {
   const labels = [];
   const data = [];
 
@@ -36,9 +37,11 @@ export function drawBalanceChart(canvas, txns, memberId, wallet, mode = "yen") {
     labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
     data.push(mine);
   }
-  // 現在値を最後に追加(取引が無くても1点は描く)
-  labels.push("いま");
-  data.push(wallet[mode] ?? 0);
+  // 今月表示のときは現在値を最後に追加(取引が無くても1点は描く)
+  if (appendNow) {
+    labels.push("いま");
+    data.push(wallet[mode] ?? 0);
+  }
 
   if (chartInstance) chartInstance.destroy();
   chartInstance = new Chart(canvas, {

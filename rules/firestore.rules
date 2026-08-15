@@ -234,7 +234,17 @@ service cloud.firestore {
         return childTransferOut(memberId, b, a, t)
           || childTransferIn(memberId, b, a, t)
           || childInterest(memberId, b, a, t)
-          || childQuiz(memberId, b, a, t);
+          || childQuiz(memberId, b, a, t)
+          || childRedeem(memberId, b, a, t);
+      }
+
+      // ごほうび交換: pt を消費(金額の正当性は ticket 側ルールで rewards の costPt と照合)
+      function childRedeem(m, b, a, t) {
+        return t.type == 'redeem' && t.fromMemberId == m && m == myMemberId()
+          && t.currency == 'pt'
+          && a.diff(b).affectedKeys().hasOnly(['pt', 'lastTxnId'])
+          && a.pt == b.pt - t.amount
+          && t.balanceAfter.from == a.pt;
       }
 
       function childTransferOut(m, b, a, t) {
@@ -300,7 +310,7 @@ service cloud.firestore {
           && t.createdAt == request.time
           && t.get('message', '') is string
           && t.get('message', '').size() <= 200
-          && typeShapeValid(t)
+          && typeShapeValid(txnId, t)
           && roleTypeValid(t)
           && pairingValid(txnId, t);
       }
@@ -311,7 +321,7 @@ service cloud.firestore {
           && (t.toMemberId == null || walletAfter(t.toMemberId).lastTxnId == txnId);
       }
 
-      function typeShapeValid(t) {
+      function typeShapeValid(txnId, t) {
         return (t.type == 'transfer'
                 && t.fromMemberId is string && t.toMemberId is string
                 && t.fromMemberId != t.toMemberId
@@ -322,6 +332,11 @@ service cloud.firestore {
           || (t.type == 'withdraw'
                 && t.toMemberId == null && t.fromMemberId is string
                 && t.memberIds == [t.fromMemberId])
+          || (t.type == 'redeem'
+                && t.toMemberId == null && t.fromMemberId is string
+                && t.memberIds == [t.fromMemberId]
+                // ごほうび交換は同一バッチで作られる券とペア(pt だけ燃やすことはできない)
+                && ticketAfter(t.refId).redeemTxnId == txnId)
           || (t.type == 'adjust'
                 && ((t.fromMemberId == null && t.toMemberId is string && t.memberIds == [t.toMemberId])
                     || (t.toMemberId == null && t.fromMemberId is string && t.memberIds == [t.fromMemberId])));
@@ -330,17 +345,34 @@ service cloud.firestore {
       function roleTypeValid(t) {
         return (myRole() == 'parent' && t.type in ['grant', 'gift', 'withdraw', 'adjust', 'quest'])
           || (myRole() == 'giver' && t.type in ['grant', 'gift'])
-          || (myRole() == 'child' && t.type in ['transfer', 'interest', 'quiz']);
+          || (myRole() == 'child' && t.type in ['transfer', 'interest', 'quiz', 'redeem']);
       }
 
       // ---------- ギフト券 ----------
       match /tickets/{ticketId} {
         allow read: if isMember();
-        allow create: if isParentOrGiver()
-          && request.resource.data.status == 'unused'
-          && request.resource.data.memberId is string;
+        allow create: if (isParentOrGiver()
+            && request.resource.data.status == 'unused'
+            && request.resource.data.memberId is string)
+          || childTicketRedeemValid(ticketId);
         allow update: if isParent() || childTicketUpdateValid(ticketId);
         allow delete: if isParent();
+      }
+
+      // ごほうび交換による券の取得: rewards のカタログ通りの内容・コストで、
+      // 同一バッチの redeem 取引(pt消費)とペアのときだけ子が券を作れる
+      function childTicketRedeemValid(ticketId) {
+        let t = request.resource.data;
+        let r = get(/databases/$(database)/documents/families/$(famId)/rewards/$(t.rewardId)).data;
+        return isMember() && myRole() == 'child'
+          && t.memberId == myMemberId()
+          && t.status == 'unused'
+          && r.active == true
+          && t.title == r.title
+          && txnAfter(t.redeemTxnId).type == 'redeem'
+          && txnAfter(t.redeemTxnId).amount == r.costPt
+          && txnAfter(t.redeemTxnId).refId == ticketId
+          && txnAfter(t.redeemTxnId).byUid == request.auth.uid;
       }
 
       function childTicketUpdateValid(ticketId) {
@@ -381,6 +413,11 @@ service cloud.firestore {
               && ticketAfter(a.refId).approvalId == approvalId)
             || (a.kind == 'quest'
               && get(/databases/$(database)/documents/families/$(famId)/quests/$(a.refId)).data.active == true)
+            // ひきだし申請: 現金化のお願い(承認時に親が残高から引く)
+            || (a.kind == 'withdraw'
+              && a.currency == 'yen'
+              && a.amount is int && a.amount > 0
+              && a.amount <= get(/databases/$(database)/documents/families/$(famId)/wallets/$(myMemberId())).data.yen)
           );
       }
 
@@ -404,7 +441,7 @@ service cloud.firestore {
           && a.status == 'canceled'
           && a.diff(b).affectedKeys().hasOnly(['status'])
           // 券の取り下げは同一バッチで券が unused に戻ること
-          && (b.kind == 'quest' || ticketAfter(b.refId).status == 'unused');
+          && (b.kind in ['quest', 'withdraw'] || ticketAfter(b.refId).status == 'unused');
       }
 
       // ---------- クエスト単価表 ----------
@@ -414,6 +451,16 @@ service cloud.firestore {
           && request.resource.data.points is int
           && request.resource.data.points >= 1
           && request.resource.data.points <= 100000;
+        allow delete: if isParent();
+      }
+
+      // ---------- ごほうびショップ(ポイントの使い道カタログ) ----------
+      match /rewards/{rewardId} {
+        allow read: if isMember();
+        allow create, update: if isParent()
+          && request.resource.data.costPt is int
+          && request.resource.data.costPt >= 1
+          && request.resource.data.costPt <= 1000000;
         allow delete: if isParent();
       }
 

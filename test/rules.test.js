@@ -76,6 +76,8 @@ async function seed() {
     b.set(fdoc(db, "wallets", "jiro"), { yen: 300, pt: 50, lastTxnId: "", lastInterestAt: WEEK_AGO_8, lastQuizAt: EPOCH });
 
     b.set(fdoc(db, "quests", "q1"), { title: "しょっきあらい", points: 30, emoji: "🍽️", active: true, sort: 0 });
+    b.set(fdoc(db, "rewards", "r1"), { title: "ゲームけん", emoji: "🎮", costPt: 30, active: true, sort: 0 });
+    b.set(fdoc(db, "rewards", "r2"), { title: "おやすみけん", emoji: "🌙", costPt: 50, active: false, sort: 1 });
     b.set(fdoc(db, "tickets", "tk1"), {
       memberId: "taro", emoji: "🚗", title: "おでかけけん", desc: "",
       status: "unused", approvalId: null, createdByUid: UID.papa, createdAt: now, usedAt: null,
@@ -544,6 +546,89 @@ describe("サプライズギフト", () => {
     await assertSucceeds(updateDoc(fdoc(as(UID.taro), "gifts", "g9"), { seenAt: serverTimestamp() }));
     // 2回目の開封(上書き)は拒否
     await assertFails(updateDoc(fdoc(as(UID.taro), "gifts", "g9"), { seenAt: serverTimestamp() }));
+  });
+});
+
+// ================================================================
+describe("ひきだし申請と承認", () => {
+  const withdrawReq = (db, { amount, id = "aw1" }) =>
+    setDoc(fdoc(db, "approvals", id), {
+      kind: "withdraw", currency: "yen", amount, refId: null,
+      memberId: "taro", status: "pending", requestedAt: serverTimestamp(),
+    });
+
+  it("残高内の申請はでき、残高超過・0円は拒否", async () => {
+    await assertSucceeds(withdrawReq(as(UID.taro), { amount: 200 }));
+    await assertFails(withdrawReq(as(UID.taro), { amount: 9999, id: "aw2" }));
+    await assertFails(withdrawReq(as(UID.taro), { amount: 0, id: "aw3" }));
+  });
+
+  it("親の承認で残高減+取引記録が成立する", async () => {
+    await withdrawReq(as(UID.taro), { amount: 200 });
+    const db = as(UID.papa);
+    const b = writeBatch(db);
+    b.update(fdoc(db, "approvals", "aw1"), {
+      status: "approved", decidedAt: serverTimestamp(), decidedByUid: UID.papa, note: "",
+    });
+    b.update(fdoc(db, "wallets", "taro"), { yen: 300, lastTxnId: "t-w1" });
+    b.set(fdoc(db, "transactions", "t-w1"), {
+      type: "withdraw", currency: "yen", amount: 200, fromMemberId: "taro", toMemberId: null,
+      memberIds: ["taro"], byUid: UID.papa, message: "", refId: "aw1",
+      balanceAfter: { from: 300, to: null }, createdAt: serverTimestamp(),
+    });
+    await assertSucceeds(b.commit());
+  });
+
+  it("子はひきだし申請を取り下げられる", async () => {
+    await withdrawReq(as(UID.taro), { amount: 100 });
+    await assertSucceeds(updateDoc(fdoc(as(UID.taro), "approvals", "aw1"), { status: "canceled" }));
+  });
+});
+
+// ================================================================
+describe("ごほうび交換(ポイントの使い道)", () => {
+  const redeemBatch = (db, uid, {
+    rewardId = "r1", title = "ゲームけん", cost = 30, newPt = 70,
+    txnId = "t-r1", ticketId = "tk-r1", withTicket = true, withWallet = true,
+  } = {}) => {
+    const b = writeBatch(db);
+    if (withWallet) b.update(fdoc(db, "wallets", "taro"), { pt: newPt, lastTxnId: txnId });
+    b.set(fdoc(db, "transactions", txnId), {
+      type: "redeem", currency: "pt", amount: cost, fromMemberId: "taro", toMemberId: null,
+      memberIds: ["taro"], byUid: uid, message: title, refId: ticketId,
+      balanceAfter: { from: newPt, to: null }, createdAt: serverTimestamp(),
+    });
+    if (withTicket) b.set(fdoc(db, "tickets", ticketId), {
+      memberId: "taro", emoji: "🎮", title, desc: "", status: "unused", approvalId: null,
+      rewardId, redeemTxnId: txnId, createdByUid: uid, createdAt: serverTimestamp(), usedAt: null,
+    });
+    return b.commit();
+  };
+
+  it("正しい交換(30pt→券)は成功", async () => {
+    await assertSucceeds(redeemBatch(as(UID.taro), UID.taro));
+  });
+
+  it("コストと違う支払い・減額のごまかしは拒否", async () => {
+    await assertFails(redeemBatch(as(UID.taro), UID.taro, { cost: 1, newPt: 99 }));
+    await assertFails(redeemBatch(as(UID.taro), UID.taro, { cost: 30, newPt: 99 }));
+  });
+
+  it("停止中のごほうびは交換できない", async () => {
+    await assertFails(redeemBatch(as(UID.taro), UID.taro, {
+      rewardId: "r2", title: "おやすみけん", cost: 50, newPt: 50,
+    }));
+  });
+
+  it("券なしのpt消費・pt消費なしの券取得はどちらも拒否", async () => {
+    await assertFails(redeemBatch(as(UID.taro), UID.taro, { withTicket: false }));
+    await assertFails(redeemBatch(as(UID.taro), UID.taro, { withWallet: false }));
+  });
+
+  it("子はごほうびマスタを書けない", async () => {
+    await assertFails(setDoc(fdoc(as(UID.taro), "rewards", "r9"), {
+      title: "ずる", emoji: "😈", costPt: 1, active: true,
+    }));
   });
 });
 

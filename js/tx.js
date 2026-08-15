@@ -252,6 +252,76 @@ export async function rejectQuest({ approvalId, note }) {
   await batch.commit();
 }
 
+/** 子: ひきだし申請(おこづかい残高を現金にかえてもらうお願い) */
+export async function requestWithdraw({ memberId, amount }) {
+  assertAmount(amount);
+  const aRef = doc(famCol("approvals"), "a" + shortId());
+  const batch = writeBatch(db);
+  batch.set(aRef, {
+    kind: "withdraw",
+    currency: "yen",
+    amount,
+    refId: null,
+    memberId,
+    status: "pending",
+    requestedAt: serverTimestamp(),
+  });
+  await batch.commit();
+  return aRef.id;
+}
+
+/** 親: ひきだし申請を承認(残高減+取引記録+承認更新を1コミットで。現金は手渡し) */
+export async function approveWithdraw({ approvalId, memberId, amount }) {
+  await adultMoneyOp({
+    type: "withdraw",
+    memberId,
+    currency: "yen",
+    amount,
+    direction: "out",
+    message: "げんきんに かえたよ",
+    extraWrites: (tx) => {
+      tx.update(famDoc("approvals", approvalId), decisionFields("approved"));
+    },
+  });
+}
+
+/** 子: ごほうびショップでポイントを券と交換(pt消費+取引+券発行を1コミットで) */
+export async function redeemReward({ memberId, rewardId, reward }) {
+  await runTransaction(db, async (tx) => {
+    const wSnap = await tx.get(walletRef(memberId));
+    const w = wSnap.data();
+    if (w.pt < reward.costPt) throw new Error("ポイントが たりないよ");
+    const ticketRef = doc(famCol("tickets"), "tk" + shortId());
+    const txnRef = doc(famCol("transactions"), "t" + shortId());
+    const newPt = w.pt - reward.costPt;
+    tx.update(walletRef(memberId), { pt: newPt, lastTxnId: txnRef.id });
+    tx.set(txnRef, baseTxn({
+      type: "redeem",
+      currency: "pt",
+      amount: reward.costPt,
+      fromMemberId: memberId,
+      toMemberId: null,
+      memberIds: [memberId],
+      balanceAfter: { from: newPt, to: null },
+      refId: ticketRef.id,
+      message: reward.title,
+    }));
+    tx.set(ticketRef, {
+      memberId,
+      emoji: reward.emoji ?? "🎁",
+      title: reward.title,
+      desc: reward.desc ?? "ポイントで こうかんしたよ",
+      status: "unused",
+      approvalId: null,
+      rewardId,
+      redeemTxnId: txnRef.id,
+      createdByUid: auth.currentUser.uid,
+      createdAt: serverTimestamp(),
+      usedAt: null,
+    });
+  });
+}
+
 /** 子: 算数チャレンジ正解のボーナス(ルールが20時間クールダウンと金額を強制) */
 export async function claimQuizReward({ memberId, bonusPt }) {
   const wRef = walletRef(memberId);

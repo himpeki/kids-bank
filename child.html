@@ -41,6 +41,16 @@
         <div id="pending-list" class="muted" style="margin-top:6px"></div>
       </div>
 
+      <div class="card" id="withdraw-card">
+        <h3>👛 おかねに かえる</h3>
+        <p class="muted">おこづかいざんだかを げんきんで もらいたいときは ここから おねがいしてね。</p>
+        <div class="row">
+          <input type="number" id="withdraw-amount" class="amount-input" placeholder="0" inputmode="numeric" min="1">
+          <button id="withdraw-btn" class="btn btn-accent" style="flex:0 0 auto">おねがいする</button>
+        </div>
+        <div id="withdraw-pending"></div>
+      </div>
+
       <div class="card" id="quiz-card">
         <h3>✏️ きょうの さんすうチャレンジ</h3>
         <div id="quiz-body">
@@ -64,6 +74,12 @@
       <h2>🎫 ギフトけん</h2>
       <p class="muted">「つかう」をおすと おうちの人に れんらくがいくよ。</p>
       <div id="ticket-list" class="ticket-list"></div>
+
+      <div class="card" id="shop-card">
+        <h3>🛍 ごほうびショップ</h3>
+        <p class="muted">ためたポイントで けんと こうかんできるよ。(いま <b id="shop-pt">0</b>pt)</p>
+        <div id="shop-list"></div>
+      </div>
     </section>
 
     <!-- ============ クエスト ============ -->
@@ -99,12 +115,12 @@
     <!-- ============ きろく ============ -->
     <section id="tab-log" class="hidden">
       <h2>📖 きろく</h2>
+      <div class="member-pick currency-pick" id="chart-currency" style="margin:8px 0">
+        <button type="button" data-cur="yen" class="selected">💴 おこづかい</button>
+        <button type="button" data-cur="pt">⭐ ポイント</button>
+      </div>
       <div class="card">
         <h3>📈 ざんだかの うごき</h3>
-        <div class="member-pick currency-pick" id="chart-currency" style="margin-bottom:10px">
-          <button type="button" data-cur="yen" class="selected">💴 おこづかい</button>
-          <button type="button" data-cur="pt">⭐ ポイント</button>
-        </div>
         <div class="chart-wrap"><canvas id="balance-chart"></canvas></div>
       </div>
       <div class="card" id="goal-card">
@@ -127,8 +143,19 @@
       </div>
       <div class="card">
         <h3>📜 おこづかいちょう</h3>
-        <div id="txn-list"></div>
-        <button id="txn-more" class="btn btn-ghost btn-sm hidden" style="margin-top:10px">もっとみる</button>
+        <div class="row" style="margin:6px 0">
+          <button id="month-prev" class="btn btn-ghost btn-sm" style="flex:0 0 auto">◀ まえ</button>
+          <b id="month-label" style="flex:1;text-align:center"></b>
+          <button id="month-next" class="btn btn-ghost btn-sm" style="flex:0 0 auto">つぎ ▶</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="passbook">
+            <thead>
+              <tr><th>日づけ</th><th>ないよう</th><th>でた・はいった</th><th>のこり</th></tr>
+            </thead>
+            <tbody id="passbook-body"></tbody>
+          </table>
+        </div>
       </div>
     </section>
   </div>
@@ -146,11 +173,11 @@
     import { requireRole } from "./js/auth.js";
     import {
       db, doc, getDoc, getDocs, setDoc, onSnapshot, query, where, orderBy, limit,
-      startAfter, updateDoc, serverTimestamp, famCol, famDoc, walletRef, settingsRef, shortId,
+      Timestamp, updateDoc, serverTimestamp, famCol, famDoc, walletRef, settingsRef, shortId,
     } from "./js/db.js";
     import {
       transfer, requestTicketUse, cancelTicketRequest, reportQuest,
-      cancelQuestRequest, claimQuizReward,
+      cancelQuestRequest, claimQuizReward, requestWithdraw, redeemReward,
     } from "./js/tx.js";
     import { applyPendingInterest } from "./js/interest.js";
     import { toast, confirmModal, confetti, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy } from "./js/ui.js";
@@ -206,7 +233,9 @@
       wallet = snap.data();
       document.getElementById("bal-yen").textContent = wallet.yen.toLocaleString("ja-JP");
       document.getElementById("bal-pt").textContent = wallet.pt.toLocaleString("ja-JP");
+      document.getElementById("shop-pt").textContent = wallet.pt.toLocaleString("ja-JP");
       renderGoals();
+      renderShop();
       updateQuizAvailability();
     });
 
@@ -221,6 +250,7 @@
         gift: { emoji: "🎁", label: "プレゼントが とどいたよ" },
         withdraw: { emoji: "👛", label: "おかねを うけとった(ひきだし)" },
         quest: { emoji: "⭐", label: t.message ? `おてつだい「${t.message}」` : "おてつだい" },
+        redeem: { emoji: "🛍", label: t.message ? `ごほうびこうかん「${t.message}」` : "ごほうびこうかん" },
         interest: { emoji: "🪙", label: "りそくが ついたよ" },
         quiz: { emoji: "✏️", label: "さんすうチャレンジ せいかい!" },
         adjust: { emoji: "🔧", label: "ちょうせい" },
@@ -303,6 +333,7 @@
         myPendingApprovals = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         renderPendingInfo();
         renderQuestPending();
+        renderWithdrawPending();
       },
     );
     function renderPendingInfo() {
@@ -356,6 +387,76 @@
       }
     });
 
+    // ---------- ひきだし申請(おかねに かえる) ----------
+    function renderWithdrawPending() {
+      const mine = myPendingApprovals.filter((a) => a.kind === "withdraw");
+      document.getElementById("withdraw-pending").innerHTML = mine.map((a) => `
+        <div class="quest-item" style="box-shadow:none;margin:8px 0 0">
+          <span class="emoji">⏳</span>
+          <span class="title">${fmtYen(a.amount)} おへんじまち</span>
+          <button class="btn btn-ghost btn-sm w-cancel-btn" data-id="${a.id}">とりけす</button>
+        </div>`).join("");
+    }
+    document.getElementById("withdraw-pending").addEventListener("click", async (e) => {
+      if (e.target.classList.contains("w-cancel-btn")) {
+        await withBusy(e.target, () => cancelQuestRequest({ approvalId: e.target.dataset.id }));
+        toast("とりけしたよ");
+      }
+    });
+    document.getElementById("withdraw-btn").addEventListener("click", async (e) => {
+      const amount = parseInt(document.getElementById("withdraw-amount").value, 10);
+      if (!Number.isInteger(amount) || amount <= 0) return toast("きんがくを 入れてね", "error");
+      if (amount > wallet.yen) return toast("ざんだかが たりないよ", "error");
+      const ok = await confirmModal({
+        title: "おかねに かえる?",
+        body: `<b>${fmtYen(amount)}</b> を げんきんに かえてもらうよう おうちの人に おねがいするよ。`,
+        okLabel: "おねがいする!",
+      });
+      if (!ok) return;
+      await withBusy(e.target, async () => {
+        await requestWithdraw({ memberId: me, amount });
+        document.getElementById("withdraw-amount").value = "";
+        toast("おうちの人に おねがいしたよ!", "ok");
+      });
+    });
+
+    // ---------- ごほうびショップ ----------
+    let rewards = [];
+    onSnapshot(query(famCol("rewards"), where("active", "==", true)), (snap) => {
+      rewards = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.costPt ?? 0) - (b.costPt ?? 0));
+      renderShop();
+    });
+    function renderShop() {
+      document.getElementById("shop-list").innerHTML = rewards.map((r) => `
+        <div class="quest-item" data-id="${r.id}">
+          <span class="emoji">${esc(r.emoji ?? "🎁")}</span>
+          <span class="title">${esc(r.title)}</span>
+          <span class="pt">${r.costPt}pt</span>
+          <button class="btn btn-primary btn-sm shop-btn" ${wallet.pt < r.costPt ? "disabled" : ""}>こうかん</button>
+        </div>`).join("") || '<p class="muted">いまは こうかんできるものが ないよ</p>';
+    }
+    document.getElementById("shop-list").addEventListener("click", async (e) => {
+      if (!e.target.classList.contains("shop-btn")) return;
+      const r = rewards.find((x) => x.id === e.target.closest(".quest-item").dataset.id);
+      if (!r) return;
+      const ok = await confirmModal({
+        title: "こうかんする?",
+        body: `${esc(r.emoji ?? "🎁")}「${esc(r.title)}」と <b>${r.costPt}pt</b> を こうかんするよ。けんは「けん」のページに とどくよ。`,
+        okLabel: "こうかん!",
+      });
+      if (!ok) return;
+      await withBusy(e.target, async () => {
+        try {
+          await redeemReward({ memberId: me, rewardId: r.id, reward: r });
+          confetti(2000);
+          toast(`「${r.title}」を ゲットしたよ!`, "ok");
+        } catch (err) {
+          console.error(err);
+          toast(err.message || "こうかんできなかったよ", "error");
+        }
+      });
+    });
+
     // ---------- おくる(兄弟間送金) ----------
     const siblings = [...members.entries()]
       .filter(([id, m]) => m.role === "child" && id !== me)
@@ -403,54 +504,81 @@
       });
     });
 
-    // ---------- きろくタブ ----------
-    // おこづかいちょうは50件ずつ読み込み、「もっとみる」で過去へ無限に遡れる
-    // (元帳は追記専用で全取引がFirestoreに残り続ける)
-    const LOG_PAGE = 50;
-    let logTxns = [];      // 読み込み済みの取引(新しい順)
-    let logCursor = null;  // 続きを読むためのカーソル
-    let chartMode = "yen"; // グラフの表示通貨
+    // ---------- きろくタブ(月ごとの通帳) ----------
+    // 元帳は追記専用で全取引がFirestoreに残り続けるため、月をさかのぼれば何年前でも見られる。
+    // 表示は本物の通帳と同じく口座(おこづかい/ポイント)ごと・古い順で、その時点の残高列を持つ。
+    let logTxns = [];      // 表示中の月の取引(古い順)
+    let chartMode = "yen"; // 表示する通貨
+    let logMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
-    async function loadLog(reset = true) {
+    function isCurrentMonth() {
+      const n = new Date();
+      return logMonth.getFullYear() === n.getFullYear() && logMonth.getMonth() === n.getMonth();
+    }
+
+    async function loadLog() {
       try {
-        if (reset) {
-          logTxns = [];
-          logCursor = null;
-        }
+        const start = logMonth;
+        const end = new Date(logMonth.getFullYear(), logMonth.getMonth() + 1, 1);
         const snap = await getDocs(query(
           famCol("transactions"),
           where("memberIds", "array-contains", me),
+          where("createdAt", ">=", Timestamp.fromDate(start)),
+          where("createdAt", "<", Timestamp.fromDate(end)),
           orderBy("createdAt", "desc"),
-          ...(logCursor ? [startAfter(logCursor)] : []),
-          limit(LOG_PAGE),
+          limit(500),
         ));
-        if (snap.docs.length) logCursor = snap.docs[snap.docs.length - 1];
-        logTxns.push(...snap.docs.map((d) => d.data()));
-        // 1ページぶんまるごと取れたときだけ続きがある可能性がある
-        document.getElementById("txn-more").classList.toggle("hidden", snap.docs.length < LOG_PAGE);
-        document.getElementById("txn-list").innerHTML =
-          logTxns.map(txnHtml).join("") || '<p class="muted">まだ きろくがないよ</p>';
-        drawLogChart();
+        logTxns = snap.docs.map((d) => d.data()).reverse(); // 古い順に
+        renderLog();
       } catch (e) {
         console.error(e);
-        document.getElementById("txn-list").innerHTML =
-          '<p class="muted">きろくを よみこめなかったよ(インデックス作成中かも)</p>';
+        document.getElementById("passbook-body").innerHTML =
+          '<tr><td colspan="4" class="muted">きろくを よみこめなかったよ(インデックス作成中かも)</td></tr>';
       }
     }
 
-    function drawLogChart() {
-      drawBalanceChart(document.getElementById("balance-chart"), [...logTxns].reverse(), me, wallet, chartMode);
+    function renderLog() {
+      document.getElementById("month-label").textContent =
+        `${logMonth.getFullYear()}ねん ${logMonth.getMonth() + 1}がつ`;
+      document.getElementById("month-next").disabled = isCurrentMonth();
+
+      const rows = logTxns.filter((t) => t.currency === chartMode);
+      document.getElementById("passbook-body").innerHTML = rows.map((t) => {
+        const d = describeTxn(t);
+        const mine = t.fromMemberId === me ? t.balanceAfter?.from : t.balanceAfter?.to;
+        // クエストはラベルにメモ(クエスト名)を含むので二重表示しない
+        const memo = t.message && t.type !== "quest"
+          ? `<div class="pb-memo">💬 ${esc(t.message)}</div>` : "";
+        return `<tr>
+          <td class="pb-date">${fmtDate(t.createdAt)}</td>
+          <td class="pb-desc">${d.emoji} ${esc(d.label)}${memo}</td>
+          <td class="pb-amount ${d.isOut ? "minus" : "plus"}">${d.sign}${t.amount.toLocaleString("ja-JP")}</td>
+          <td class="pb-balance">${mine != null ? mine.toLocaleString("ja-JP") : "-"}</td>
+        </tr>`;
+      }).join("") || '<tr><td colspan="4" class="muted center">このつきの きろくは ないよ</td></tr>';
+
+      drawBalanceChart(
+        document.getElementById("balance-chart"),
+        logTxns, me, wallet, chartMode, isCurrentMonth(),
+      );
     }
 
-    document.getElementById("txn-more").addEventListener("click", (e) =>
-      withBusy(e.target, () => loadLog(false)));
+    document.getElementById("month-prev").addEventListener("click", () => {
+      logMonth = new Date(logMonth.getFullYear(), logMonth.getMonth() - 1, 1);
+      loadLog();
+    });
+    document.getElementById("month-next").addEventListener("click", () => {
+      if (isCurrentMonth()) return;
+      logMonth = new Date(logMonth.getFullYear(), logMonth.getMonth() + 1, 1);
+      loadLog();
+    });
 
     document.getElementById("chart-currency").addEventListener("click", (e) => {
       const btn = e.target.closest("button");
       if (!btn) return;
       chartMode = btn.dataset.cur;
       document.querySelectorAll("#chart-currency button").forEach((b) => b.classList.toggle("selected", b === btn));
-      drawLogChart();
+      renderLog();
     });
 
     // ---------- 目標貯金 ----------

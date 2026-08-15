@@ -128,6 +128,21 @@
           <button id="new-quest-btn" class="btn btn-ok btn-sm" style="margin-top:8px">追加</button>
         </details>
       </div>
+      <div class="card">
+        <h3>🛍 ごほうびショップ(ポイントの使い道)</h3>
+        <p class="muted">子どもはポイントを消費してごほうび券と交換できます(交換は即時、券を使うタイミングで承認)。</p>
+        <div id="reward-admin-list"></div>
+        <details style="margin-top:10px">
+          <summary>+ ごほうびを追加する</summary>
+          <div class="row" style="margin-top:8px">
+            <input type="text" id="new-reward-emoji" placeholder="絵文字" maxlength="4" style="max-width:90px">
+            <input type="text" id="new-reward-title" placeholder="ごほうび名" maxlength="30">
+            <input type="number" id="new-reward-points" placeholder="pt" inputmode="numeric" min="1" style="max-width:90px">
+          </div>
+          <button id="new-reward-btn" class="btn btn-ok btn-sm" style="margin-top:8px">追加</button>
+        </details>
+        <button id="reward-presets-btn" class="btn btn-ghost btn-sm" style="margin-top:8px">おすすめセットをまとめて追加</button>
+      </div>
     </section>
 
     <!-- ============ 設定 ============ -->
@@ -183,10 +198,10 @@
     } from "./js/db.js";
     import {
       adultMoneyOp, sendMoneyGift, sendTicketGift, issueTicket,
-      approveTicket, rejectTicket, approveQuest, rejectQuest,
+      approveTicket, rejectTicket, approveQuest, rejectQuest, approveWithdraw,
     } from "./js/tx.js";
     import { toast, confirmModal, esc, fmtYen, fmtPt, fmtAmount, fmtDate, withBusy } from "./js/ui.js";
-    import { TICKET_PRESETS, ROLE_LABELS } from "./js/presets.js";
+    import { TICKET_PRESETS, REWARD_PRESETS, ROLE_LABELS } from "./js/presets.js";
 
     const ident = await requireRole("parent", "giver");
     const isGiver = ident.role === "giver";
@@ -288,6 +303,10 @@
           sub = "おてつだい報告";
           a._points = q?.points;
           a._title = q?.title;
+        } else if (a.kind === "withdraw") {
+          emoji = "👛";
+          title = `${(a.amount ?? 0).toLocaleString("ja-JP")}円 をひきだしたい`;
+          sub = "現金にかえるお願い(承認したら手渡しを)";
         } else {
           const t = (await getDoc(famDoc("tickets", a.refId))).data();
           emoji = t?.emoji ?? "🎫";
@@ -295,7 +314,8 @@
           sub = "券を使いたい";
         }
         return `<div class="approval-item" data-id="${a.id}" data-kind="${a.kind}" data-ref="${a.refId}"
-                     data-member="${a.memberId}" data-points="${a._points ?? ""}" data-title="${esc(a._title ?? "")}">
+                     data-member="${a.memberId}" data-amount="${a.amount ?? ""}"
+                     data-points="${a._points ?? ""}" data-title="${esc(a._title ?? "")}">
           <span class="a-emoji">${emoji}</span>
           <div class="a-main"><div class="a-title">${esc(title)}</div>
             <div class="muted">${esc(mName(a.memberId))} ・ ${sub} ・ ${fmtDate(a.requestedAt)}</div></div>
@@ -309,13 +329,14 @@
     document.getElementById("approval-box").addEventListener("click", async (e) => {
       const item = e.target.closest(".approval-item");
       if (!item) return;
-      const { id, kind, ref, member, points, title } = item.dataset;
+      const { id, kind, ref, member, points, title, amount } = item.dataset;
       if (e.target.classList.contains("approve-btn")) {
         await withBusy(e.target, async () => {
           try {
             if (kind === "ticket") await approveTicket({ approvalId: id, ticketId: ref });
+            else if (kind === "withdraw") await approveWithdraw({ approvalId: id, memberId: member, amount: parseInt(amount, 10) });
             else await approveQuest({ approvalId: id, memberId: member, points: parseInt(points, 10), questTitle: title });
-            toast("承認しました", "ok");
+            toast(kind === "withdraw" ? "承認しました。現金を渡してあげてください 👛" : "承認しました", "ok");
           } catch (err) {
             console.error(err);
             toast(`エラー: ${err.message}`, "error");
@@ -447,6 +468,8 @@
         </div>`).join("") || '<p class="muted">券はまだありません</p>';
       await loadQuests();
       renderQuestAdmin();
+      await loadRewards();
+      renderRewardAdmin();
     }
     document.getElementById("ticket-member").addEventListener("change", renderTicketAdmin);
 
@@ -558,6 +581,86 @@
         toast("追加しました", "ok");
         document.getElementById("new-quest-title").value = "";
         document.getElementById("new-quest-points").value = "";
+      });
+    });
+
+    // ---------- ごほうびショップ管理(親のみ) ----------
+    let rewardsCache = new Map();
+    async function loadRewards() {
+      rewardsCache = new Map();
+      (await getDocs(famCol("rewards"))).forEach((d) => rewardsCache.set(d.id, d.data()));
+    }
+    function renderRewardAdmin() {
+      const items = [...rewardsCache.entries()].sort((a, b) => (a[1].costPt ?? 0) - (b[1].costPt ?? 0));
+      document.getElementById("reward-admin-list").innerHTML = items.map(([id, r]) => `
+        <div class="list-item" data-id="${id}">
+          <span>${esc(r.emoji ?? "🎁")}</span>
+          <div class="li-main">${esc(r.title)} <b>${r.costPt}pt</b>
+            ${r.active ? "" : '<span class="muted">[停止中]</span>'}</div>
+          <button class="btn btn-ghost btn-sm edit-reward" data-id="${id}">編集</button>
+          <button class="btn btn-ghost btn-sm toggle-reward" data-id="${id}" data-active="${r.active}">
+            ${r.active ? "停止" : "再開"}</button>
+        </div>`).join("") || '<p class="muted">ごほうびがありません(おすすめセットを追加できます)</p>';
+    }
+    document.getElementById("reward-admin-list").addEventListener("click", async (e) => {
+      if (e.target.classList.contains("toggle-reward")) {
+        await updateDoc(famDoc("rewards", e.target.dataset.id), { active: e.target.dataset.active !== "true" });
+        await loadRewards();
+        renderRewardAdmin();
+      }
+      if (e.target.classList.contains("edit-reward")) {
+        const r = rewardsCache.get(e.target.dataset.id);
+        const item = e.target.closest(".list-item");
+        item.innerHTML = `
+          <input class="er-emoji" value="${esc(r.emoji ?? "🎁")}" maxlength="4" style="max-width:70px">
+          <input class="er-title" value="${esc(r.title)}" maxlength="30">
+          <input class="er-points" type="number" value="${r.costPt}" min="1" inputmode="numeric" style="max-width:80px">
+          <button class="btn btn-ok btn-sm save-reward" data-id="${item.dataset.id}">保存</button>
+          <button class="btn btn-ghost btn-sm cancel-reward-edit">✕</button>`;
+      }
+      if (e.target.classList.contains("cancel-reward-edit")) renderRewardAdmin();
+      if (e.target.classList.contains("save-reward")) {
+        const item = e.target.closest(".list-item");
+        const title = item.querySelector(".er-title").value.trim();
+        const costPt = parseInt(item.querySelector(".er-points").value, 10);
+        const emoji = item.querySelector(".er-emoji").value.trim() || "🎁";
+        if (!title || !Number.isInteger(costPt) || costPt <= 0) {
+          return toast("名前とptを確認してください", "error");
+        }
+        await withBusy(e.target, async () => {
+          await updateDoc(famDoc("rewards", e.target.dataset.id), { title, costPt, emoji });
+          await loadRewards();
+          renderRewardAdmin();
+          toast("保存しました", "ok");
+        });
+      }
+    });
+    document.getElementById("new-reward-btn").addEventListener("click", async (e) => {
+      const title = document.getElementById("new-reward-title").value.trim();
+      const costPt = parseInt(document.getElementById("new-reward-points").value, 10);
+      if (!title || !Number.isInteger(costPt) || costPt <= 0) return toast("名前とptを入れてください", "error");
+      await withBusy(e.target, async () => {
+        await setDoc(doc(famCol("rewards"), "r" + shortId()), {
+          emoji: document.getElementById("new-reward-emoji").value.trim() || "🎁",
+          title, costPt, active: true, sort: rewardsCache.size,
+        });
+        await loadRewards();
+        renderRewardAdmin();
+        toast("追加しました", "ok");
+        document.getElementById("new-reward-title").value = "";
+        document.getElementById("new-reward-points").value = "";
+      });
+    });
+    document.getElementById("reward-presets-btn").addEventListener("click", async (e) => {
+      await withBusy(e.target, async () => {
+        const batch = writeBatch(db);
+        REWARD_PRESETS.forEach((r, i) => {
+          batch.set(doc(famCol("rewards"), "r" + shortId()), { ...r, active: true, sort: rewardsCache.size + i });
+        });
+        await batch.commit();
+        await loadRewards();
+        renderRewardAdmin();
+        toast("おすすめセットを追加しました", "ok");
       });
     });
 
