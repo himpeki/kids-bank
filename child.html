@@ -63,11 +63,11 @@
         <h3>✏️ きょうの さんすうチャレンジ</h3>
         <div id="quiz-body">
           <div class="quiz-q" id="quiz-q">...</div>
-          <div class="row">
+          <div class="row" id="quiz-form">
             <input type="number" id="quiz-answer" class="amount-input" placeholder="?" inputmode="numeric">
             <button id="quiz-btn" class="btn btn-accent" style="flex:0 0 auto">こたえる!</button>
           </div>
-          <p class="muted center" id="quiz-note"></p>
+          <p class="muted center" id="quiz-note" style="margin-bottom:0"></p>
         </div>
       </div>
 
@@ -688,11 +688,14 @@
     function updateQuizAvailability() {
       const last = wallet.lastQuizAt?.toMillis?.() ?? 0;
       const ready = Date.now() - last >= 20 * 3600 * 1000;
+      // クリア済みの日は問題と回答欄を隠してカードを小さくする
+      document.getElementById("quiz-q").classList.toggle("hidden", !ready);
+      document.getElementById("quiz-form").classList.toggle("hidden", !ready);
       document.getElementById("quiz-btn").disabled = !ready;
       document.getElementById("quiz-answer").disabled = !ready;
       document.getElementById("quiz-note").textContent = ready
         ? `せいかいすると +${bonusPt}pt!`
-        : "きょうのぶんは クリアずみ! また あしたね";
+        : "きょうのチャレンジは クリアずみ! また あしたね 🎉";
     }
     document.getElementById("quiz-btn").addEventListener("click", async (e) => {
       const ans = parseInt(document.getElementById("quiz-answer").value, 10);

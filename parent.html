@@ -256,6 +256,10 @@
     } catch {}
 
     // ---------- タブ ----------
+    // 設定タブの再描画キュー。showTab("settings") が初期ハッシュで即実行される
+    // ことがあるため、タブ初期化より前に宣言しておく必要がある
+    let memberAdminQueue = Promise.resolve();
+
     const tabs = ["home", "approvals", "gift", "money", "manage", "settings"];
     function showTab(name) {
       if (!tabs.includes(name) || (isGiver && !["home", "gift"].includes(name))) name = "home";
@@ -719,7 +723,6 @@
 
     // 再描画は直列化する(アップロード直後の再描画ときせかえ変更の再描画が
     // 競合すると、古いデータの描画が新しい描画を上書きしてしまうため)
-    let memberAdminQueue = Promise.resolve();
     function renderMemberAdmin() {
       memberAdminQueue = memberAdminQueue.then(() => renderMemberAdminInner()).catch(console.error);
       return memberAdminQueue;
@@ -879,7 +882,7 @@
       }
       if (t.classList.contains("level-btn")) {
         const m = members.get(t.dataset.member);
-        const next = Math.max(1, Math.min(9, (m.level ?? 1) + parseInt(t.dataset.d, 10)));
+        const next = Math.max(1, Math.min(6, (m.level ?? 1) + parseInt(t.dataset.d, 10)));
         await updateDoc(famDoc("members", t.dataset.member), { level: next });
         renderMemberAdmin();
       }

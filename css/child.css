@@ -28,6 +28,35 @@ body.child-mode[data-theme="mint"] {
   --c-primary: #58cfa4; --c-primary-light: #9fe6c9; --c-primary-dark: #24996f;
 }
 
+/* くろむらさき: 黒×紫のシックなダークテーマ。
+   カスタム背景使用時はすりガラス(白)側の配色を優先するため :not(.custom-bg) で限定 */
+body.child-mode[data-theme="night"] {
+  --bg1: #241b33; --bg2: #191223;
+  --c-primary: #9b6cf0; --c-primary-light: #c9a6f2; --c-primary-dark: #b98af7;
+}
+body.child-mode[data-theme="night"]:not(.custom-bg) {
+  --c-sub: #b3a3d1;
+  --c-line: #453a5e;
+  color: #f0e9fb;
+}
+body.child-mode[data-theme="night"]:not(.custom-bg) .card,
+body.child-mode[data-theme="night"]:not(.custom-bg) .ticket-card,
+body.child-mode[data-theme="night"]:not(.custom-bg) .quest-item {
+  background: #2f2344;
+  color: #f0e9fb;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+body.child-mode[data-theme="night"]:not(.custom-bg) .tabbar {
+  background: #241b33;
+  border-top-color: #453a5e;
+}
+body.child-mode[data-theme="night"]:not(.custom-bg) .tabbar a { color: #8f7fb0; }
+body.child-mode[data-theme="night"]:not(.custom-bg) .tabbar a.active { color: #c9a6f2; }
+body.child-mode[data-theme="night"]:not(.custom-bg) .goal-bar-wrap { background: #453a5e; }
+
+/* 白背景のボタン類はテーマに関わらず濃い文字色を保証(ダークテーマで文字が消えないように) */
+.member-pick button { color: var(--c-text); }
+
 .child-header {
   display: flex;
   align-items: center;

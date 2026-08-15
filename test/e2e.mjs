@@ -290,6 +290,14 @@ try {
     { timeout: 15000 },
   );
   check("算数チャレンジ正解 → +5pt", true);
+  // クリア後は問題・回答欄が隠れてメッセージだけになる
+  await cp.waitForFunction(
+    () => document.getElementById("quiz-q").classList.contains("hidden")
+      && document.getElementById("quiz-form").classList.contains("hidden")
+      && document.getElementById("quiz-note").textContent.includes("クリアずみ"),
+    { timeout: 10000 },
+  );
+  check("クイズ回答後は問題を隠してクリア済み表示に", true);
   await cp.screenshot({ path: `${SHOT_DIR}/child-final.png` });
 
   // ============ 8.2 子: ひきだし申請 → 親: 承認(400円→250円) ============
@@ -367,6 +375,26 @@ try {
   const cardCount = await pp.$$eval(".member-card", (els) => els.length);
   check(`QRカード印刷ページにカード${cardCount}枚(子ども2人分)`, cardCount === 2);
   await pp.screenshot({ path: `${SHOT_DIR}/print-cards.png`, fullPage: true });
+
+  // ============ 10.5 くろむらさき(ダーク)テーマの適用確認 ============
+  await pp.goto(`${BASE}/parent.html#settings`, { waitUntil: "networkidle2" });
+  await pp.waitForSelector('#member-admin-list details[data-mrole="child"]', { timeout: 15000 });
+  await pp.$$eval('#member-admin-list details[data-mrole="child"]', (ds) => { ds[0].open = true; });
+  await pp.waitForSelector('#member-admin-list details[data-mrole="child"] .ks-theme[data-theme="night"]', { timeout: 15000 });
+  await pp.$eval('#member-admin-list details[data-mrole="child"] .ks-theme[data-theme="night"]', (el) => el.click());
+  await cp.waitForFunction(() => document.body.dataset.theme === "night", { timeout: 15000 });
+  // 背景画像を外して純粋なダークテーマ表示に
+  await pp.waitForSelector('#member-admin-list details[data-mrole="child"] .ks-bg[data-img="none"]', { timeout: 15000 });
+  await pp.$eval('#member-admin-list details[data-mrole="child"] .ks-bg[data-img="none"]', (el) => el.click());
+  await cp.waitForFunction(() => !document.body.classList.contains("custom-bg"), { timeout: 15000 });
+  await cp.evaluate(() => { location.hash = "#home"; });
+  await sleep(500);
+  const darkBg = await cp.evaluate(() => {
+    const c = document.querySelector(".card");
+    return getComputedStyle(c).backgroundColor === "rgb(47, 35, 68)"; // #2f2344
+  });
+  check("くろむらさきテーマ(ダーク配色)が子画面に反映", darkBg);
+  await cp.screenshot({ path: `${SHOT_DIR}/child-night.png` });
 } catch (e) {
   failures++;
   console.error("❌ E2E失敗:", e.message);

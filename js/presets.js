@@ -38,6 +38,7 @@ export const THEMES = {
   grape: { name: "ゆめむらさき", emoji: "🎀" },
   pudding: { name: "ぷりん", emoji: "🍮" },
   mint: { name: "ちょこみんと", emoji: "🍫" },
+  night: { name: "くろむらさき", emoji: "🖤" },
 };
 
 export const AVATAR_CHOICES = ["🐣", "🐰", "🦊", "🐻", "🐱", "🐶", "🐼", "🦄", "🐸", "🐹", "🐧", "⭐"];
