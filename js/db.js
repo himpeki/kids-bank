@@ -26,6 +26,9 @@ import { db } from "./firebase-init.js";
 import {
   doc,
   collection,
+  getDoc,
+  getDocFromCache,
+  onSnapshot,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 let familyId = null;
@@ -43,6 +46,35 @@ export const famDoc = (name, id) => doc(db, "families", getFamilyId(), name, id)
 export const walletRef = (memberId) => famDoc("wallets", memberId);
 export const settingsRef = () => famDoc("settings", "config");
 export const uidRef = (uid) => doc(db, "uids", uid);
+
+/**
+ * コレクション(またはクエリ)を購読して Map {id → data} を最新に保つ。
+ * 戻り値の Promise は初回スナップショットで解決する(永続キャッシュがあれば即)。
+ * 以降の変更(自分の書き込みのローカル即時反映を含む)ごとに onChange が呼ばれる。
+ */
+export function watchCol(refOrQuery, map, onChange) {
+  return new Promise((resolve, reject) => {
+    onSnapshot(
+      refOrQuery,
+      (snap) => {
+        map.clear();
+        snap.forEach((d) => map.set(d.id, d.data()));
+        onChange?.();
+        resolve();
+      },
+      reject,
+    );
+  });
+}
+
+/** キャッシュにあればそれを即返し、なければサーバーから取る(表示用の参照データ向け) */
+export async function getDocCacheFirst(ref) {
+  try {
+    return await getDocFromCache(ref);
+  } catch {
+    return getDoc(ref);
+  }
+}
 
 /** 推測不能なランダムID(famId・招待トークン用)。32文字アルファベットで偏りなし */
 export function newId(len = 20) {

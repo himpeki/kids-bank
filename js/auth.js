@@ -16,6 +16,8 @@ import {
 import { DEFAULT_SETTINGS } from "./config.js";
 import { QUEST_PRESETS, REWARD_PRESETS } from "./presets.js";
 
+// 身元キャッシュのキー。index.html の高速パス(インラインスクリプト)も同じキーを
+// 直書きで参照しているので、変えるときは両方直すこと
 const LS_IDENTITY = "okozukai.identity";
 
 /**

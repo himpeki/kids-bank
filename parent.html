@@ -8,10 +8,16 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icons/icon-180.png">
   <meta name="theme-color" content="#4d96ff">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com">
+  <link rel="preconnect" href="https://firestore.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./css/base.css">
   <link rel="stylesheet" href="./css/parent.css">
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
+  <!-- defer: QRCode はボタン操作時にしか使わないので HTML 解析を止めない -->
+  <script defer src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
 </head>
 <body class="parent-mode">
   <header class="parent-header">
@@ -204,9 +210,10 @@
   <script type="module">
     import { requireRole } from "./js/auth.js";
     import {
-      db, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot,
-      query, where, orderBy, limit, writeBatch, serverTimestamp, Timestamp,
-      famRef, famCol, famDoc, walletRef, settingsRef, uidRef, newId, shortId, getFamilyId,
+      db, doc, setDoc, updateDoc, deleteDoc, onSnapshot,
+      query, where, writeBatch, serverTimestamp, Timestamp,
+      famRef, famCol, famDoc, walletRef, settingsRef, newId, shortId, getFamilyId,
+      watchCol, getDocCacheFirst,
     } from "./js/db.js";
     import {
       adultMoneyOp, sendMoneyGift, sendTicketGift, issueTicket,
@@ -226,51 +233,81 @@
       }
     }
 
-    // ---------- メンバー ----------
-    let members = new Map();
-    async function loadMembers() {
-      members = new Map();
-      (await getDocs(famCol("members"))).forEach((d) => members.set(d.id, d.data()));
+    // ---------- リアルタイム購読 ----------
+    // 一覧データはすべて購読で持つ。書き込みはローカルに即反映され(レイテンシ補償)、
+    // その変更が購読経由で画面を再描画するので、サーバー応答を待つ必要がない。
+    // uiReady までは再描画をスキップ(この下で定義する DOM 参照・定数がまだ無いため)
+    let uiReady = false;
+    const onMembersChange = () => { if (!uiReady) return; refreshMemberSelects(); renderKidCards(); renderMemberAdmin(); };
+    const onImagesChange = () => { if (!uiReady) return; renderKidCards(); renderMemberAdmin(); };
+    const onInvitesChange = () => { if (!uiReady) return; renderMemberAdmin(); };
+    const onQuestsChange = () => { if (!uiReady) return; renderQuestAdmin(); };
+    const onRewardsChange = () => { if (!uiReady) return; renderRewardAdmin(); };
+
+    const members = new Map();
+    const imagesCache = new Map(); // 家族限定のカスタム画像(アバター・背景・きせかえ候補)
+    const questsCache = new Map();
+    const rewardsCache = new Map();
+    const invitesCache = new Map(); // 親のみ購読
+
+    const firstLoads = [
+      watchCol(famCol("members"), members, onMembersChange),
+      watchCol(famCol("images"), imagesCache, onImagesChange),
+      watchCol(famCol("quests"), questsCache, onQuestsChange),
+    ];
+    if (!isGiver) {
+      firstLoads.push(
+        watchCol(famCol("rewards"), rewardsCache, onRewardsChange),
+        watchCol(famCol("invites"), invitesCache, onInvitesChange),
+      );
     }
-    await loadMembers();
+    await Promise.all(firstLoads);
+
     const mName = (id) => members.get(id)?.name ?? "?";
     const children = () =>
       [...members.entries()].filter(([, m]) => m.role === "child").sort((a, b) => (a[1].sort ?? 0) - (b[1].sort ?? 0));
     const AVATARS = ["🐣", "🐰", "🦊", "🐻", "🐱", "🐶"];
     const avatarOf = (id) => members.get(id)?.avatar || AVATARS[(members.get(id)?.sort ?? 0) % AVATARS.length];
-
-    // 家族限定のカスタム画像(アバター表示に使用)
-    let imagesCache = new Map();
-    async function loadImages() {
-      imagesCache = new Map();
-      (await getDocs(famCol("images"))).forEach((d) => imagesCache.set(d.id, d.data()));
-    }
-    await loadImages();
     const avatarHtml = (id) => {
       const img = members.get(id)?.avatarImageId ? imagesCache.get(members.get(id).avatarImageId) : null;
       return img ? `<img class="avatar-img" src="${img.dataUrl}" alt="">` : avatarOf(id);
     };
 
-    try {
-      const famSnap = await getDoc(famRef());
-      document.getElementById("fam-name").textContent = famSnap.data()?.name ?? "";
-    } catch {}
+    // 宛先セレクトは3タブ共通。再描画時は選択中の値を保つ
+    function refreshMemberSelects() {
+      for (const elId of ["ticket-member", "gift-to", "money-member"]) {
+        const el = document.getElementById(elId);
+        const cur = el.value;
+        el.innerHTML = children().map(([id, m]) => `<option value="${id}">${esc(m.name)}</option>`).join("");
+        if ([...el.options].some((o) => o.value === cur)) el.value = cur;
+      }
+    }
+
+    // 家族名は取得できた時点で埋める(起動をブロックしない)
+    getDocCacheFirst(famRef())
+      .then((s) => { document.getElementById("fam-name").textContent = s.data()?.name ?? ""; })
+      .catch(() => {});
+
+    // 書き込みを待たないためのヘルパ。ローカル反映→購読の再描画が即走るので、
+    // 完了メッセージは先に出し、失敗(ルール拒否など)のときだけ通知する
+    function bgWrite(promise, okMsg) {
+      if (okMsg) toast(okMsg, "ok");
+      promise.catch((err) => {
+        console.error(err);
+        toast(`保存できませんでした: ${err.message}`, "error");
+      });
+    }
 
     // ---------- タブ ----------
-    // 設定タブの再描画キュー。showTab("settings") が初期ハッシュで即実行される
-    // ことがあるため、タブ初期化より前に宣言しておく必要がある
-    let memberAdminQueue = Promise.resolve();
-
     const tabs = ["home", "approvals", "gift", "money", "manage", "settings"];
     function showTab(name) {
       if (!tabs.includes(name) || (isGiver && !["home", "gift"].includes(name))) name = "home";
       for (const t of tabs) document.getElementById(`tab-${t}`).classList.toggle("hidden", t !== name);
       document.querySelectorAll(".tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.tab === name));
-      if (name === "manage") renderTicketAdmin();
+      if (name === "manage") watchTicketAdmin();
       if (name === "settings") renderMemberAdmin();
     }
     addEventListener("hashchange", () => showTab(location.hash.slice(1)));
-    showTab(location.hash.slice(1) || "home");
 
     // ---------- ダッシュボード ----------
     // アバター・レベル変更後にも再描画できるよう、残高はキャッシュを持って描き直す
@@ -311,16 +348,8 @@
         });
       }
     }
-    renderKidCards();
 
     // ---------- 承認(親のみ) ----------
-    let questsCache = new Map();
-    async function loadQuests() {
-      questsCache = new Map();
-      (await getDocs(famCol("quests"))).forEach((d) => questsCache.set(d.id, d.data()));
-    }
-    await loadQuests();
-
     if (!isGiver) {
       onSnapshot(
         query(famCol("approvals"), where("status", "==", "pending")),
@@ -348,7 +377,7 @@
         let emoji = "❓", title = "", sub = "";
         let approveDisabled = false;
         if (a.kind === "quest") {
-          const q = questsCache.get(a.refId) ?? (await getDoc(famDoc("quests", a.refId))).data();
+          const q = questsCache.get(a.refId) ?? (await getDocCacheFirst(famDoc("quests", a.refId))).data();
           emoji = q?.emoji ?? "⭐";
           title = `${q?.title ?? "おてつだい"} (+${q?.points ?? "?"}pt)`;
           sub = "おてつだい報告";
@@ -363,8 +392,8 @@
           title = `${mName(a.toMemberId)} に ${fmtAmount(a.currency, a.amount)} おくりたい`;
           sub = a.message ? `メモ: ${a.message}` : "きょうだい送金";
         } else if (a.kind === "ticketTransfer") {
-          const t = (await getDoc(famDoc("tickets", a.refId))).data();
-          const want = a.wantTicketId ? (await getDoc(famDoc("tickets", a.wantTicketId))).data() : null;
+          const t = (await getDocCacheFirst(famDoc("tickets", a.refId))).data();
+          const want = a.wantTicketId ? (await getDocCacheFirst(famDoc("tickets", a.wantTicketId))).data() : null;
           emoji = "🔁";
           title = want
             ? `「${t?.title ?? "?"}」⇔「${want?.title ?? "?"}」を こうかんしたい`
@@ -377,7 +406,7 @@
             sub += ` / ✅ ${mName(a.toMemberId)}同意済み`;
           }
         } else {
-          const t = (await getDoc(famDoc("tickets", a.refId))).data();
+          const t = (await getDocCacheFirst(famDoc("tickets", a.refId))).data();
           emoji = t?.emoji ?? "🎫";
           title = t?.title ?? "ギフト券";
           sub = "券を使いたい";
@@ -434,8 +463,7 @@
     });
 
     // ---------- おくりもの ----------
-    const giftToEl = document.getElementById("gift-to");
-    giftToEl.innerHTML = children().map(([id, m]) => `<option value="${id}">${esc(m.name)}</option>`).join("");
+    const giftToEl = document.getElementById("gift-to"); // 中身は refreshMemberSelects が入れる
     const presetEl = document.getElementById("gift-preset");
     presetEl.innerHTML =
       TICKET_PRESETS.map((p, i) => `<option value="${i}">${p.emoji} ${p.title}</option>`).join("") +
@@ -489,8 +517,6 @@
     });
 
     // ---------- 残高そうさ(親のみ) ----------
-    document.getElementById("money-member").innerHTML =
-      children().map(([id, m]) => `<option value="${id}">${esc(m.name)}</option>`).join("");
     let moneyOp = "grant";
     document.getElementById("money-op").addEventListener("click", (e) => {
       const btn = e.target.closest("button");
@@ -529,34 +555,32 @@
     });
 
     // ---------- 券・クエスト管理(親のみ) ----------
-    document.getElementById("ticket-member").innerHTML =
-      children().map(([id, m]) => `<option value="${id}">${esc(m.name)}</option>`).join("");
-
-    async function renderTicketAdmin() {
+    // 選択中の子の券を購読する(発行・無効化・子の使用がすべて即反映される)
+    let ticketUnsub = null;
+    let ticketMemberShown = null;
+    function watchTicketAdmin() {
       const memberId = document.getElementById("ticket-member").value;
-      if (!memberId) return;
-      const snap = await getDocs(query(famCol("tickets"), where("memberId", "==", memberId)));
-      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
-      const stLabel = { unused: "未使用", pending: "承認待ち", used: "使用済み", void: "無効" };
-      document.getElementById("ticket-admin-list").innerHTML = docs.map((t) => `
-        <div class="list-item">
-          <span>${esc(t.emoji ?? "🎫")}</span>
-          <div class="li-main">${esc(t.title)} <span class="muted">[${stLabel[t.status] ?? t.status}]</span></div>
-          ${t.status === "unused" ? `<button class="btn btn-ghost btn-sm void-ticket" data-id="${t.id}">無効化</button>` : ""}
-        </div>`).join("") || '<p class="muted">券はまだありません</p>';
-      await loadQuests();
-      renderQuestAdmin();
-      await loadRewards();
-      renderRewardAdmin();
+      if (!memberId || memberId === ticketMemberShown) return;
+      ticketMemberShown = memberId;
+      ticketUnsub?.();
+      ticketUnsub = onSnapshot(query(famCol("tickets"), where("memberId", "==", memberId)), (snap) => {
+        // serverTimestamps: 送信確定前の新しい券も推定時刻で正しい位置に並べる
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }))
+          .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+        const stLabel = { unused: "未使用", pending: "承認待ち", used: "使用済み", void: "無効" };
+        document.getElementById("ticket-admin-list").innerHTML = docs.map((t) => `
+          <div class="list-item">
+            <span>${esc(t.emoji ?? "🎫")}</span>
+            <div class="li-main">${esc(t.title)} <span class="muted">[${stLabel[t.status] ?? t.status}]</span></div>
+            ${t.status === "unused" ? `<button class="btn btn-ghost btn-sm void-ticket" data-id="${t.id}">無効化</button>` : ""}
+          </div>`).join("") || '<p class="muted">券はまだありません</p>';
+      });
     }
-    document.getElementById("ticket-member").addEventListener("change", renderTicketAdmin);
+    document.getElementById("ticket-member").addEventListener("change", watchTicketAdmin);
 
-    document.getElementById("ticket-admin-list").addEventListener("click", async (e) => {
+    document.getElementById("ticket-admin-list").addEventListener("click", (e) => {
       if (e.target.classList.contains("void-ticket")) {
-        await updateDoc(famDoc("tickets", e.target.dataset.id), { status: "void" });
-        toast("無効化しました");
-        renderTicketAdmin();
+        bgWrite(updateDoc(famDoc("tickets", e.target.dataset.id), { status: "void" }), "無効化しました");
       }
     });
 
@@ -580,7 +604,6 @@
         }
         await batch.commit();
         toast("たんじょうびセットを発行しました 🎂", "ok");
-        renderTicketAdmin();
       });
     });
 
@@ -597,7 +620,6 @@
         });
         toast("発行しました", "ok");
         document.getElementById("new-ticket-title").value = "";
-        renderTicketAdmin();
       });
     });
 
@@ -613,11 +635,9 @@
             ${q.active ? "停止" : "再開"}</button>
         </div>`).join("") || '<p class="muted">クエストがありません</p>';
     }
-    document.getElementById("quest-admin-list").addEventListener("click", async (e) => {
+    document.getElementById("quest-admin-list").addEventListener("click", (e) => {
       if (e.target.classList.contains("toggle-quest")) {
-        await updateDoc(famDoc("quests", e.target.dataset.id), { active: e.target.dataset.active !== "true" });
-        await loadQuests();
-        renderQuestAdmin();
+        bgWrite(updateDoc(famDoc("quests", e.target.dataset.id), { active: e.target.dataset.active !== "true" }));
       }
       if (e.target.classList.contains("edit-quest")) {
         const q = questsCache.get(e.target.dataset.id);
@@ -638,37 +658,24 @@
         if (!title || !Number.isInteger(points) || points <= 0) {
           return toast("名前とptを確認してください", "error");
         }
-        await withBusy(e.target, async () => {
-          await updateDoc(famDoc("quests", e.target.dataset.id), { title, points, emoji });
-          await loadQuests();
-          renderQuestAdmin();
-          toast("保存しました", "ok");
-        });
+        // ローカル反映→クエスト購読の再描画で編集フォームは即閉じる
+        bgWrite(updateDoc(famDoc("quests", e.target.dataset.id), { title, points, emoji }), "保存しました");
       }
     });
-    document.getElementById("new-quest-btn").addEventListener("click", async (e) => {
+    document.getElementById("new-quest-btn").addEventListener("click", (e) => {
       const title = document.getElementById("new-quest-title").value.trim();
       const points = parseInt(document.getElementById("new-quest-points").value, 10);
       if (!title || !Number.isInteger(points) || points <= 0) return toast("名前とptを入れてください", "error");
-      await withBusy(e.target, async () => {
-        await setDoc(doc(famCol("quests"), "q" + shortId()), {
-          emoji: document.getElementById("new-quest-emoji").value.trim() || "⭐",
-          title, points, active: true, sort: questsCache.size,
-        });
-        await loadQuests();
-        renderQuestAdmin();
-        toast("追加しました", "ok");
-        document.getElementById("new-quest-title").value = "";
-        document.getElementById("new-quest-points").value = "";
-      });
+      bgWrite(setDoc(doc(famCol("quests"), "q" + shortId()), {
+        emoji: document.getElementById("new-quest-emoji").value.trim() || "⭐",
+        title, points, active: true, sort: questsCache.size,
+      }), "追加しました");
+      // 入力を即クリアする(連打で二重登録になるのも防げる)
+      document.getElementById("new-quest-title").value = "";
+      document.getElementById("new-quest-points").value = "";
     });
 
     // ---------- ごほうびショップ管理(親のみ) ----------
-    let rewardsCache = new Map();
-    async function loadRewards() {
-      rewardsCache = new Map();
-      (await getDocs(famCol("rewards"))).forEach((d) => rewardsCache.set(d.id, d.data()));
-    }
     function renderRewardAdmin() {
       const items = [...rewardsCache.entries()].sort((a, b) => (a[1].costPt ?? 0) - (b[1].costPt ?? 0));
       document.getElementById("reward-admin-list").innerHTML = items.map(([id, r]) => `
@@ -681,11 +688,9 @@
             ${r.active ? "停止" : "再開"}</button>
         </div>`).join("") || '<p class="muted">ごほうびがありません(おすすめセットを追加できます)</p>';
     }
-    document.getElementById("reward-admin-list").addEventListener("click", async (e) => {
+    document.getElementById("reward-admin-list").addEventListener("click", (e) => {
       if (e.target.classList.contains("toggle-reward")) {
-        await updateDoc(famDoc("rewards", e.target.dataset.id), { active: e.target.dataset.active !== "true" });
-        await loadRewards();
-        renderRewardAdmin();
+        bgWrite(updateDoc(famDoc("rewards", e.target.dataset.id), { active: e.target.dataset.active !== "true" }));
       }
       if (e.target.classList.contains("edit-reward")) {
         const r = rewardsCache.get(e.target.dataset.id);
@@ -706,29 +711,19 @@
         if (!title || !Number.isInteger(costPt) || costPt <= 0) {
           return toast("名前とptを確認してください", "error");
         }
-        await withBusy(e.target, async () => {
-          await updateDoc(famDoc("rewards", e.target.dataset.id), { title, costPt, emoji });
-          await loadRewards();
-          renderRewardAdmin();
-          toast("保存しました", "ok");
-        });
+        bgWrite(updateDoc(famDoc("rewards", e.target.dataset.id), { title, costPt, emoji }), "保存しました");
       }
     });
-    document.getElementById("new-reward-btn").addEventListener("click", async (e) => {
+    document.getElementById("new-reward-btn").addEventListener("click", (e) => {
       const title = document.getElementById("new-reward-title").value.trim();
       const costPt = parseInt(document.getElementById("new-reward-points").value, 10);
       if (!title || !Number.isInteger(costPt) || costPt <= 0) return toast("名前とptを入れてください", "error");
-      await withBusy(e.target, async () => {
-        await setDoc(doc(famCol("rewards"), "r" + shortId()), {
-          emoji: document.getElementById("new-reward-emoji").value.trim() || "🎁",
-          title, costPt, active: true, sort: rewardsCache.size,
-        });
-        await loadRewards();
-        renderRewardAdmin();
-        toast("追加しました", "ok");
-        document.getElementById("new-reward-title").value = "";
-        document.getElementById("new-reward-points").value = "";
-      });
+      bgWrite(setDoc(doc(famCol("rewards"), "r" + shortId()), {
+        emoji: document.getElementById("new-reward-emoji").value.trim() || "🎁",
+        title, costPt, active: true, sort: rewardsCache.size,
+      }), "追加しました");
+      document.getElementById("new-reward-title").value = "";
+      document.getElementById("new-reward-points").value = "";
     });
     document.getElementById("reward-presets-btn").addEventListener("click", async (e) => {
       await withBusy(e.target, async () => {
@@ -737,8 +732,6 @@
           batch.set(doc(famCol("rewards"), "r" + shortId()), { ...r, active: true, sort: rewardsCache.size + i });
         });
         await batch.commit();
-        await loadRewards();
-        renderRewardAdmin();
         toast("おすすめセットを追加しました", "ok");
       });
     });
@@ -751,24 +744,15 @@
       invest: "📈 もぎとうし(将来機能)",
     };
 
-    // 再描画は直列化する(アップロード直後の再描画ときせかえ変更の再描画が
-    // 競合すると、古いデータの描画が新しい描画を上書きしてしまうため)
+    // 購読キャッシュ(members / imagesCache / invitesCache)から同期的に描画する。
+    // フェッチしないので、変更のたびに呼んでも競合しない
     function renderMemberAdmin() {
-      memberAdminQueue = memberAdminQueue.then(() => renderMemberAdminInner()).catch(console.error);
-      return memberAdminQueue;
-    }
-
-    async function renderMemberAdminInner() {
-      await loadMembers();
-      await loadImages();
       renderImageAdmin();
       const famId = getFamilyId();
-      const inviteSnap = await getDocs(famCol("invites"));
       const invitesByMember = new Map();
-      inviteSnap.forEach((d) => {
-        const v = d.data();
+      invitesCache.forEach((v, token) => {
         if (!invitesByMember.has(v.memberId)) invitesByMember.set(v.memberId, []);
-        invitesByMember.get(v.memberId).push({ token: d.id, ...v });
+        invitesByMember.get(v.memberId).push({ token, ...v });
       });
       const base = new URL("./index.html", location.href).href;
 
@@ -844,38 +828,27 @@
             </div>
           </details>`;
         }).join("");
-
-      // きせかえ・レベル・メンバー追加の変更をダッシュボードにも反映
-      renderKidCards();
     }
 
     document.getElementById("member-admin-list").addEventListener("click", async (e) => {
       // 画像入りボタンは内側の <img> がクリック対象になるので button まで遡る
       const t = e.target.closest("button") ?? e.target;
       if (t.classList.contains("ks-theme")) {
-        await updateDoc(famDoc("members", t.dataset.member), { theme: t.dataset.theme });
-        toast("保存しました", "ok");
-        renderMemberAdmin();
+        bgWrite(updateDoc(famDoc("members", t.dataset.member), { theme: t.dataset.theme }), "保存しました");
         return;
       }
       if (t.classList.contains("ks-avatar")) {
-        await updateDoc(famDoc("members", t.dataset.member), { avatar: t.dataset.avatar, avatarImageId: null });
-        toast("保存しました", "ok");
-        renderMemberAdmin();
+        bgWrite(updateDoc(famDoc("members", t.dataset.member), { avatar: t.dataset.avatar, avatarImageId: null }), "保存しました");
         return;
       }
       if (t.classList.contains("ks-avatar-img")) {
-        await updateDoc(famDoc("members", t.dataset.member), { avatarImageId: t.dataset.img });
-        toast("保存しました", "ok");
-        renderMemberAdmin();
+        bgWrite(updateDoc(famDoc("members", t.dataset.member), { avatarImageId: t.dataset.img }), "保存しました");
         return;
       }
       if (t.classList.contains("ks-bg")) {
-        await updateDoc(famDoc("members", t.dataset.member), {
+        bgWrite(updateDoc(famDoc("members", t.dataset.member), {
           bgImageId: t.dataset.img === "none" ? null : t.dataset.img,
-        });
-        toast("保存しました", "ok");
-        renderMemberAdmin();
+        }), "保存しました");
         return;
       }
       if (t.classList.contains("show-qr")) {
@@ -895,34 +868,28 @@
           okLabel: "無効化",
         });
         if (!ok) return;
-        await updateDoc(famDoc("invites", t.dataset.token), { revoked: true });
-        toast("無効化しました");
-        renderMemberAdmin();
+        bgWrite(updateDoc(famDoc("invites", t.dataset.token), { revoked: true }), "無効化しました");
       }
       if (t.classList.contains("new-invite")) {
         const role = t.dataset.role;
         const reusable = role === "child";
-        await setDoc(doc(famCol("invites"), newId(24)), {
+        bgWrite(setDoc(doc(famCol("invites"), newId(24)), {
           role, memberId: t.dataset.member, reusable, revoked: false,
           expiresAt: reusable ? null : Timestamp.fromDate(new Date(Date.now() + 7 * 86400 * 1000)),
           usedBy: [], createdAt: serverTimestamp(),
-        });
-        toast("発行しました", "ok");
-        renderMemberAdmin();
+        }), "発行しました");
       }
       if (t.classList.contains("level-btn")) {
         const m = members.get(t.dataset.member);
         const next = Math.max(1, Math.min(6, (m.level ?? 1) + parseInt(t.dataset.d, 10)));
-        await updateDoc(famDoc("members", t.dataset.member), { level: next });
-        renderMemberAdmin();
+        bgWrite(updateDoc(famDoc("members", t.dataset.member), { level: next }));
       }
     });
-    document.getElementById("member-admin-list").addEventListener("change", async (e) => {
+    document.getElementById("member-admin-list").addEventListener("change", (e) => {
       if (e.target.classList.contains("unlock-toggle")) {
-        await updateDoc(famDoc("members", e.target.dataset.member), {
+        bgWrite(updateDoc(famDoc("members", e.target.dataset.member), {
           [`unlocks.${e.target.dataset.key}`]: e.target.checked,
-        });
-        toast("保存しました", "ok");
+        }), "保存しました");
       }
     });
 
@@ -954,7 +921,6 @@
         await batch.commit();
         document.getElementById("new-member-name").value = "";
         toast("追加しました", "ok");
-        renderMemberAdmin();
       });
     });
 
@@ -976,10 +942,7 @@
         okLabel: "削除",
       });
       if (!ok) return;
-      await deleteDoc(famDoc("images", e.target.dataset.id));
-      await loadImages();
-      renderImageAdmin();
-      toast("削除しました");
+      bgWrite(deleteDoc(famDoc("images", e.target.dataset.id)), "削除しました");
     });
     document.getElementById("image-upload-btn").addEventListener("click", async (e) => {
       const file = document.getElementById("image-file").files[0];
@@ -988,12 +951,10 @@
       await withBusy(e.target, async () => {
         try {
           const dataUrl = await fileToResizedDataUrl(file);
+          // 一覧・きせかえの選択肢へは画像購読の再描画で反映される
           await setDoc(doc(famCol("images"), "img" + shortId()), {
             name, dataUrl, uploadedByUid: ident.uid, createdAt: serverTimestamp(),
           });
-          await loadImages();
-          renderImageAdmin();
-          renderMemberAdmin(); // きせかえの画像選択肢にも反映
           document.getElementById("image-file").value = "";
           document.getElementById("image-name").value = "";
           toast("アップロードしました(家族だけに表示されます)", "ok");
@@ -1004,11 +965,13 @@
       });
     });
 
-    // 設定値
+    // 設定値(表示は取得でき次第埋める。保存ボタンは先に生かしておく)
     if (!isGiver) {
-      const s = (await getDoc(settingsRef())).data() ?? {};
-      document.getElementById("rate-input").value = (s.weeklyRateBp ?? 100) / 100;
-      document.getElementById("quiz-bonus-input").value = s.quizBonusPt ?? 5;
+      getDocCacheFirst(settingsRef()).then((snap) => {
+        const s = snap.data() ?? {};
+        document.getElementById("rate-input").value = (s.weeklyRateBp ?? 100) / 100;
+        document.getElementById("quiz-bonus-input").value = s.quizBonusPt ?? 5;
+      }).catch(console.error);
       document.getElementById("settings-save").addEventListener("click", async (e) => {
         const pct = parseFloat(document.getElementById("rate-input").value);
         const bonus = parseInt(document.getElementById("quiz-bonus-input").value, 10);
@@ -1021,6 +984,17 @@
         });
       });
     }
+
+    // ---------- 初期描画 ----------
+    // 以降は各購読が変更のたびに再描画する
+    uiReady = true;
+    refreshMemberSelects();
+    renderKidCards();
+    if (!isGiver) {
+      renderQuestAdmin();
+      renderRewardAdmin();
+    }
+    showTab(location.hash.slice(1) || "home");
   </script>
 </body>
 </html>

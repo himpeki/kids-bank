@@ -8,10 +8,16 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icons/icon-180.png">
   <meta name="theme-color" content="#ff8fab">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com">
+  <link rel="preconnect" href="https://firestore.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./css/base.css">
   <link rel="stylesheet" href="./css/child.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+  <!-- defer: HTML の解析を止めない(module スクリプトはどのみち defer 相当で後から実行される) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
 </head>
 <body class="child-mode">
   <div class="child-header">
@@ -186,6 +192,7 @@
     import {
       db, doc, getDoc, getDocs, setDoc, onSnapshot, query, where, orderBy, limit,
       Timestamp, updateDoc, serverTimestamp, famCol, famDoc, walletRef, settingsRef, shortId,
+      watchCol, getDocCacheFirst,
     } from "./js/db.js";
     import {
       requestTransfer, requestTicketUse, cancelTicketRequest, reportQuest,
@@ -202,18 +209,18 @@
     const me = ident.memberId;
 
     // ---------- メンバー情報 ----------
+    // 購読で持つ: 永続キャッシュがあれば初回スナップショットが即返るので起動が速い
     const members = new Map();
-    const memberSnaps = await getDocs(famCol("members"));
-    memberSnaps.forEach((d) => members.set(d.id, d.data()));
-    const myMember = members.get(me) ?? { name: "?", level: 1, unlocks: {} };
+    await watchCol(famCol("members"), members);
+    const myMember = { name: "?", level: 1, unlocks: {}, ...(members.get(me) ?? {}) };
     const mName = (id) => members.get(id)?.name ?? "?";
     const myAvatar = () => myMember.avatar || AVATAR_CHOICES[(myMember.sort ?? 0) % AVATAR_CHOICES.length];
     document.getElementById("my-name").textContent = myMember.name;
     document.getElementById("my-level").textContent = `Lv.${myMember.level ?? 1}`;
 
-    // 家族限定のカスタム画像(背景・アバターに使える)
+    // 家族限定のカスタム画像。自分が使う分だけ ensureImage で遅延取得する
+    // (全件先読みは重い: 1枚最大650KB がモバイル回線の起動を数秒遅らせていた)
     const images = new Map();
-    (await getDocs(famCol("images"))).forEach((d) => images.set(d.id, d.data()));
 
     // ---------- きせかえの反映(設定は親の管理画面から。ここは表示のみ) ----------
     function renderHeaderAvatar() {
@@ -228,10 +235,10 @@
       if (img) document.body.style.setProperty("--custom-bg-url", `url("${img.dataUrl}")`);
     }
     async function ensureImage(id) {
-      // 親があとからアップロードした画像は起動時の一覧に無いので個別に取得
+      // 画像ドキュメントは不変(差し替えは新ID)なのでキャッシュ優先で個別取得
       if (!id || images.has(id)) return;
       try {
-        const s = await getDoc(famDoc("images", id));
+        const s = await getDocCacheFirst(famDoc("images", id));
         if (s.exists()) images.set(id, s.data());
       } catch (e) {
         console.warn("image fetch:", e);
@@ -272,8 +279,14 @@
     showTab(location.hash.slice(1) || "home");
 
     // ---------- 設定(クイズボーナス等)は wallet リスナーより先に読む ----------
-    const settingsSnap = await getDoc(settingsRef());
-    const bonusPt = settingsSnap.data()?.quizBonusPt ?? 5;
+    // 購読にしておくと、キャッシュから即返るうえに親がボーナスを変えたら即反映される
+    let bonusPt = 5;
+    await new Promise((resolve, reject) => {
+      onSnapshot(settingsRef(), (snap) => {
+        bonusPt = snap.data()?.quizBonusPt ?? 5;
+        resolve();
+      }, reject);
+    });
     const quiz = todaysQuiz(me, myMember.level ?? 1);
 
     // ---------- 「ホーム画面に追加」のヒント ----------

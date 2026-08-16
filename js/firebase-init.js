@@ -8,7 +8,9 @@ import {
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   connectFirestoreEmulator,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { FIREBASE_CONFIG } from "./config.js";
@@ -30,7 +32,12 @@ const config = useEmulator
 
 export const app = initializeApp(config);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// 永続ローカルキャッシュ(IndexedDB): 2回目以降の読み取りは端末内から即返り、
+// 書き込みは即ローカル反映+裏で同期(オフラインでもキューに積まれて消えない)。
+// IndexedDB が使えない環境では SDK が自動でメモリキャッシュに切り替える。
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 
 if (useEmulator) {
   // スマホ実機から LAN 経由で試すときは、エミュレータを --host 0.0.0.0 で起動し

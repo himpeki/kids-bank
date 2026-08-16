@@ -9,8 +9,29 @@
   <link rel="apple-touch-icon" href="./icons/icon-180.png">
   <meta name="theme-color" content="#ff8fab">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com">
+  <link rel="preconnect" href="https://firestore.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./css/base.css">
+  <script>
+    // 高速パス: Firebase の読み込みを待たずに行き先が分かるケースは即遷移する。
+    // 登録済み端末の本検証は遷移先の requireRole が行う(無効ならキャッシュが
+    // 消されて index に戻され、ランディングが出る。ループはしない)
+    (function () {
+      var p = new URLSearchParams(location.search);
+      var f = p.get("f"), t = p.get("t");
+      if (f && t) {
+        location.replace("./register.html?f=" + encodeURIComponent(f) + "&t=" + encodeURIComponent(t));
+        return;
+      }
+      try {
+        var c = JSON.parse(localStorage.getItem("okozukai.identity"));
+        if (c && c.role) location.replace(c.role === "child" ? "./child.html" : "./parent.html");
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div class="container">
