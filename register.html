@@ -12,8 +12,18 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://identitytoolkit.googleapis.com">
-  <link rel="preconnect" href="https://firestore.googleapis.com">  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://firestore.googleapis.com">  <!-- フォントCSSは非ブロック読み込み(回線不調時に白画面のまま待たされるのを防ぐ)。
+       読み込み完了まではシステムフォントで即表示する -->
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet"></noscript>
   <link rel="stylesheet" href="./css/base.css">
+  <script>
+    // 静的ファイルをService Workerで端末に保存し、回線不調でも白画面にしない
+    // (開発時: localhost では登録しない)
+    if ("serviceWorker" in navigator && !["localhost", "127.0.0.1"].includes(location.hostname)) {
+      addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+    }
+  </script>
 </head>
 <body>
   <div class="container">
