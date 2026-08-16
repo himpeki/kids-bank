@@ -26,7 +26,19 @@ const LS_IDENTITY = "okozukai.identity";
  */
 export async function resolveIdentity() {
   const user = await ensureSignedIn();
-  const snap = await getDoc(uidRef(user.uid));
+  let snap;
+  try {
+    snap = await getDoc(uidRef(user.uid));
+  } catch (e) {
+    // 一時的な読み取り失敗(電波不良など)。同じユーザーの身元キャッシュがあれば
+    // それで続行する(Firestoreの永続キャッシュがデータ表示を支える)
+    const cached = cachedIdentityFor(user.uid);
+    if (cached) {
+      setFamilyId(cached.familyId);
+      return cached;
+    }
+    throw e;
+  }
   if (!snap.exists()) {
     localStorage.removeItem(LS_IDENTITY);
     return null;
@@ -37,9 +49,32 @@ export async function resolveIdentity() {
   return ident;
 }
 
+/** uid が一致する場合のみ身元キャッシュを返す(別ユーザーへの化けを防ぐ) */
+function cachedIdentityFor(uid) {
+  try {
+    const c = JSON.parse(localStorage.getItem(LS_IDENTITY));
+    return c && c.uid === uid ? c : null;
+  } catch {
+    return null;
+  }
+}
+
 /** ページの入場ガード。ロールが合わなければ適切なページへ送り返す */
 export async function requireRole(...roles) {
-  const ident = await resolveIdentity();
+  let ident;
+  try {
+    ident = await resolveIdentity();
+  } catch (e) {
+    // 白画面のまま死なせず、再試行ボタンを出す
+    document.body.innerHTML = `
+      <div class="container"><div class="card" style="margin-top:60px;text-align:center">
+        <div style="font-size:48px">📡</div>
+        <h3>うまく つながらないよ</h3>
+        <p class="muted">でんぱの いいばしょで もういちど ためしてみてね。</p>
+        <button class="btn btn-primary btn-big" onclick="location.reload()">もういちど</button>
+      </div></div>`;
+    throw e;
+  }
   if (!ident) {
     location.replace("./index.html");
     throw new Error("unregistered");
@@ -181,5 +216,10 @@ export async function createFamily({ setupKey, familyName, selfName, members }) 
 
   await batch2.commit();
   setFamilyId(famId);
+  // 作成直後の遷移で uids 照会が一時失敗しても続行できるよう身元キャッシュも保存
+  localStorage.setItem(
+    LS_IDENTITY,
+    JSON.stringify({ uid: user.uid, familyId: famId, memberId: selfId, role: "parent" }),
+  );
   return { familyId: famId, selfId, invites };
 }

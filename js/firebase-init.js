@@ -48,6 +48,11 @@ if (useEmulator) {
 }
 
 /** 匿名認証でサインイン済みの User を返す(未サインインなら新規作成) */
+// 注意: onAuthStateChanged の「未サインイン」通知は本番の通信遅延下で複数回来ることが
+// あり、そのたびに signInAnonymously すると匿名ユーザーが複数作られて
+// 「登録したユーザー」と「端末に保存されたユーザー」がズレる(→ 権限エラー・未登録扱い)。
+// サインイン処理は必ず1本に共有する。
+let signingIn = null;
 export function ensureSignedIn() {
   return new Promise((resolve, reject) => {
     const stop = onAuthStateChanged(
@@ -57,7 +62,10 @@ export function ensureSignedIn() {
           stop();
           resolve(user);
         } else {
-          signInAnonymously(auth).catch((e) => {
+          signingIn ??= signInAnonymously(auth).finally(() => {
+            signingIn = null;
+          });
+          signingIn.catch((e) => {
             stop();
             reject(e);
           });
