@@ -30,7 +30,7 @@
 - 子は「送金・利息・クイズ」のみ、祖父母(giver)は「増額のみ」、と役割ごとに許可を絞る
 - 利息は `lastInterestAt` が正確に7日きざみでしか進まないため二重付与できない
 
-この性質は `test/rules.test.js`(40テスト)で証明しています。
+この性質は `test/rules.test.js`(59テスト)で証明しています。
 
 ## 初期セットアップ(1回だけ)
 
@@ -90,7 +90,7 @@ iOSのSafariは約7日間開かなかったサイトのローカルデータを�
 ## 開発・テスト
 
 ```powershell
-# ルールテスト(Firestoreエミュレータ上で40テスト)
+# ルールテスト(Firestoreエミュレータ上で59テスト)
 pwsh -File tools/test.ps1      # プロジェクト内 .jre のJava21を使う。システムにJava11+があれば npm test でも可
 
 # ローカルでアプリを動かす(エミュレータ+静的サーバー)
@@ -105,6 +105,11 @@ npm run serve                  # ターミナル2: http://localhost:5500
 node test/e2e.mjs
 # Node経由のChrome起動に失敗する環境では、先にChromeを常駐させてから実行する:
 #   chrome.exe --headless --remote-debugging-port=9333 --user-data-dir=%TEMP%\chrome-e2e "about:blank"
+
+# 本番サイトのチェック(要 Chrome 常駐 port 9333)
+node test/prod-check.mjs       # 匿名認証+Firestore照会が本番で通るか
+node test/perf-check.mjs       # 4G相当エミュレートでの読み込み時間の分解
+node test/sw-check.mjs         # Service Workerの登録とオフライン表示
 ```
 
 - Firestoreエミュレータには Java 11+ が必要です。`.jre/` にポータブル版Temurin 21を配置済み(gitignore対象)。無い環境では `tools/test.ps1` 実行前に https://adoptium.net から入手してください。
@@ -118,6 +123,8 @@ Cloud Functionsは使わないため、**Blazeプランへのアップグレー�
 
 ## 設計メモ
 
+- 表示は「購読(onSnapshot)+Firestore永続キャッシュ」が基本。書き込みは即ローカル反映→購読が再描画するので、管理系の操作はサーバー応答を待たない(`parent.html` の `bgWrite`)。金銭系(送金・承認・入出金)だけは確定を待つ
+- 静的ファイルは `sw.js`(Service Worker, stale-while-revalidate)で端末に保存。回線不調でも白画面にならない。**デプロイの反映は「次回起動時」と1回遅れる**のが正常動作。localhost では登録されない
 - 金額はすべて整数(円・pt)。浮動小数点は使わない
 - 利率はベーシスポイント(bp)で保持: 100bp = 週1%
 - `families/{famId}` のIDは推測不能な20文字。ID知識がなければ何も読めない
