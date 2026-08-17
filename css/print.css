@@ -1,4 +1,8 @@
-/* QRカード印刷: 名刺サイズ 91mm × 55mm */
+/* QRカード印刷: 名刺サイズ(91mm × 55mm)× --card-scale 倍 */
+:root {
+  --card-scale: 0.8; /* 印刷サイズの倍率。カード内の全寸法がこれに連動する */
+}
+
 .print-cards {
   display: flex;
   flex-wrap: wrap;
@@ -8,15 +12,15 @@
 }
 
 .member-card {
-  width: 91mm;
-  height: 55mm;
-  border-radius: 4mm;
+  width: calc(91mm * var(--card-scale));
+  height: calc(55mm * var(--card-scale));
+  border-radius: calc(4mm * var(--card-scale));
   background: linear-gradient(135deg, #ffe9f0 0%, #fff7e0 60%, #e8f4ff 100%);
-  border: 0.6mm solid #ffb3c8;
+  border: calc(0.6mm * var(--card-scale)) solid #ffb3c8;
   display: flex;
   align-items: center;
-  padding: 4mm 5mm;
-  gap: 4mm;
+  padding: calc(4mm * var(--card-scale)) calc(5mm * var(--card-scale));
+  gap: calc(4mm * var(--card-scale));
   page-break-inside: avoid;
   break-inside: avoid;
   overflow: hidden;
@@ -25,36 +29,36 @@
 
 .member-card .card-left { flex: 1; min-width: 0; }
 .member-card .bank-name {
-  font-size: 3.4mm;
+  font-size: calc(3.4mm * var(--card-scale));
   font-weight: 700;
   color: var(--pc-accent, #e5537d);
-  letter-spacing: 0.3mm;
+  letter-spacing: calc(0.3mm * var(--card-scale));
   line-height: 1.5;
 }
 .member-card .kid-name {
-  font-size: 8mm;
+  font-size: calc(8mm * var(--card-scale));
   font-weight: 800;
   color: var(--pc-text, #3d3a4b);
-  margin: 3mm 0 1mm;
+  margin: calc(3mm * var(--card-scale)) 0 calc(1mm * var(--card-scale));
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
 }
 
 .member-card .qr-holder {
-  width: 30mm;
-  height: 30mm;
+  width: calc(30mm * var(--card-scale));
+  height: calc(30mm * var(--card-scale));
   background: #fff;
-  border-radius: 2mm;
-  padding: 1.5mm;
+  border-radius: calc(2mm * var(--card-scale));
+  padding: calc(1.5mm * var(--card-scale));
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .member-card .qr-holder canvas,
 .member-card .qr-holder img {
-  width: 27mm !important;
-  height: 27mm !important;
+  width: calc(27mm * var(--card-scale)) !important;
+  height: calc(27mm * var(--card-scale)) !important;
 }
 
 /* 子どもが選んだきせかえテーマ(配色・文字色)をカードにも反映 */
