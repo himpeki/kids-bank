@@ -90,11 +90,13 @@
       const invSnap = await getDoc(doc(db, "families", famId, "invites", token)).catch(() => null);
       const inv = invSnap?.exists() ? invSnap.data() : null;
 
-      // 登録済み端末: 同じメンバーのカード再スキャン(や招待が読めない場合)はそのまま入場。
-      // 別メンバーの有効な招待を開いた場合だけ、下の「きりかえ」確認に進む
+      // 登録済み端末は原則そのまま「自分の画面」へ入場する。
+      // 子のカード(reusable)は家族共通の入口を兼ねる: 子端末なら子ページ、親端末なら親ページ。
+      // 「きりかえ」確認に進むのは、別メンバーの1回限り招待リンクを開いたときだけ
+      // (リンクをわざわざ発行して開く=この端末を登録し直す意思表示。誤登録の修正に使う)
       if (
         existing && existing.familyId === famId
-        && (!inv || (inv.memberId === existing.memberId && inv.role === existing.role))
+        && (!inv || inv.reusable || (inv.memberId === existing.memberId && inv.role === existing.role))
       ) {
         location.replace(existing.role === "child" ? "./child.html" : "./parent.html");
         return;

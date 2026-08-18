@@ -251,6 +251,7 @@
     const onMembersChange = () => { if (!uiReady) return; refreshMemberSelects(); renderKidCards(); renderMemberAdmin(); };
     const onImagesChange = () => { if (!uiReady) return; renderKidCards(); renderMemberAdmin(); };
     const onInvitesChange = () => { if (!uiReady) return; renderMemberAdmin(); };
+    const onDevicesChange = () => { if (!uiReady) return; renderMemberAdmin(); };
     const onQuestsChange = () => { if (!uiReady) return; renderQuestAdmin(); };
     const onRewardsChange = () => { if (!uiReady) return; renderRewardAdmin(); };
 
@@ -259,6 +260,7 @@
     const questsCache = new Map();
     const rewardsCache = new Map();
     const invitesCache = new Map(); // 親のみ購読
+    const devicesCache = new Map(); // 親のみ購読(端末整理用)
 
     const firstLoads = [
       watchCol(famCol("members"), members, onMembersChange),
@@ -269,6 +271,7 @@
       firstLoads.push(
         watchCol(famCol("rewards"), rewardsCache, onRewardsChange),
         watchCol(famCol("invites"), invitesCache, onInvitesChange),
+        watchCol(famCol("devices"), devicesCache, onDevicesChange),
       );
     }
     await Promise.all(firstLoads);
@@ -754,7 +757,21 @@
       invest: "📈 もぎとうし(将来機能)",
     };
 
-    // 購読キャッシュ(members / imagesCache / invitesCache)から同期的に描画する。
+    // UserAgent文字列から人が読める端末名に(細かい正確さより分かりやすさ優先)
+    function deviceLabel(d) {
+      const ua = d.label || "";
+      const os = /iPhone/.test(ua) ? "iPhone"
+        : /iPad/.test(ua) ? "iPad"
+        : /Android/.test(ua) ? "Android端末"
+        : /Windows/.test(ua) ? "Windowsパソコン"
+        : /Macintosh/.test(ua) ? "Mac"
+        : "端末";
+      const date = d.registeredAt?.toDate
+        ? `(${d.registeredAt.toDate().toLocaleDateString("ja-JP")} 登録)` : "";
+      return `${os} ${date}`;
+    }
+
+    // 購読キャッシュ(members / imagesCache / invitesCache / devicesCache)から同期的に描画する。
     // フェッチしないので、変更のたびに呼んでも競合しない
     function renderMemberAdmin() {
       renderImageAdmin();
@@ -828,6 +845,15 @@
               </div>`
             : "";
 
+          const devices = [...devicesCache.entries()].filter(([, d]) => d.memberId === id);
+          const deviceHtml = devices.map(([uid, d]) => {
+            const isSelf = uid === ident.uid;
+            return `<div class="row" style="align-items:center;gap:6px;margin:4px 0">
+              <span class="muted" style="flex:1;font-size:12px">${esc(deviceLabel(d))}${isSelf ? " ★いま使っている端末" : ""}</span>
+              ${isSelf ? "" : `<button class="btn btn-ghost btn-sm remove-device" data-uid="${uid}" data-name="${esc(m.name)}">登録解除</button>`}
+            </div>`;
+          }).join("") || '<p class="muted" style="font-size:12px">登録された端末はありません</p>';
+
           return `<details class="member-detail" data-mid="${id}" data-mrole="${m.role}" ${openIds.has(id) ? "open" : ""}>
             <summary>${avatarHtml(id)} ${esc(m.name)} <span class="muted">(${ROLE_LABELS[m.role]})</span></summary>
             ${unlockHtml}
@@ -836,6 +862,7 @@
               <button class="btn btn-accent btn-sm new-invite" data-member="${id}" data-role="${m.role}">
                 ${m.role === "child" ? "カード用リンクを再発行" : "招待リンクを発行(7日有効)"}</button>
             </div>
+            <div style="margin-top:8px"><b>📱 とうろくずみの端末</b>${deviceHtml}</div>
           </details>`;
         }).join("");
     }
@@ -843,6 +870,20 @@
     document.getElementById("member-admin-list").addEventListener("click", async (e) => {
       // 画像入りボタンは内側の <img> がクリック対象になるので button まで遡る
       const t = e.target.closest("button") ?? e.target;
+      if (t.classList.contains("remove-device")) {
+        const ok = await confirmModal({
+          title: "端末の登録を解除しますか?",
+          body: `${esc(t.dataset.name)} の端末1台をアプリから切りはなします。<br>` +
+            "その端末は、カードのQRや招待リンクを読み込めば また登録できます。",
+          okLabel: "解除する",
+        });
+        if (!ok) return;
+        const b = writeBatch(db);
+        b.delete(famDoc("devices", t.dataset.uid));
+        b.delete(doc(db, "uids", t.dataset.uid));
+        bgWrite(b.commit(), "解除しました");
+        return;
+      }
       if (t.classList.contains("ks-theme")) {
         bgWrite(updateDoc(famDoc("members", t.dataset.member), { theme: t.dataset.theme }), "保存しました");
         return;

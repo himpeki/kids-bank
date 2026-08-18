@@ -469,20 +469,34 @@ try {
   check("くろむらさきテーマ(黒基調・お金カードも黒系)が子画面に反映", darkBg);
   await cp.screenshot({ path: `${SHOT_DIR}/child-night.png` });
 
-  // ============ 11. 登録済み端末の切り替え(親端末で子カードを開く) ============
-  // 自動登録はされず確認画面になり、「きりかえる!」で子端末として登録し直せる
+  // ============ 11. 子カードは家族共通の入口(登録済み端末は自分の画面へ素通り) ============
   await pp.goto(invites[0], { waitUntil: "networkidle2" });
-  await pp.waitForSelector("#confirm:not(.hidden)", { timeout: 15000 });
-  const switchMsg = await pp.$eval("#confirm-msg", (el) => el.textContent);
-  check("親端末で子カードを開くと自動登録されず確認が出る", switchMsg.includes("きりかえる"));
-  await pp.$eval("#register-btn", (el) => el.click());
-  await pp.waitForSelector("#done:not(.hidden)", { timeout: 20000 });
-  await pp.$eval("#go-btn", (el) => el.click());
-  await pp.waitForFunction(
-    () => document.getElementById("my-name")?.textContent === "たろう",
-    { timeout: 20000 },
-  );
-  check("きりかえ実行 → 子ホーム(たろう)として開く", true);
+  await pp.waitForSelector("#kid-cards", { timeout: 20000 });
+  check("親端末で子カードを開くと確認なしで親画面が開く", pp.url().includes("parent.html"));
+
+  // ============ 12. 誤登録の修正: 1回限りリンクで端末を切り替え ============
+  // 子端末(たろう)でママ用の1回限りリンクを開く → 確認 → きりかえ → 親画面
+  await cp.goto(invites[2], { waitUntil: "networkidle2" });
+  await cp.waitForSelector("#confirm:not(.hidden)", { timeout: 15000 });
+  const switchMsg = await cp.$eval("#confirm-msg", (el) => el.textContent);
+  check("別メンバーの1回限りリンクでは切り替え確認が出る", switchMsg.includes("きりかえる"));
+  await cp.$eval("#register-btn", (el) => el.click());
+  await cp.waitForSelector("#done:not(.hidden)", { timeout: 20000 });
+  await cp.$eval("#go-btn", (el) => el.click());
+  await cp.waitForSelector("#kid-cards", { timeout: 20000 });
+  check("きりかえ実行 → 親画面(ママ)として開く", cp.url().includes("parent.html"));
+
+  // ============ 13. 親の端末整理(登録解除) ============
+  // papa の設定から、いま切り替えた ママの端末(cp)を登録解除する
+  await pp.evaluate(() => { location.hash = "#settings"; });
+  await pp.waitForSelector("#member-admin-list details", { timeout: 15000 });
+  await pp.$$eval("#member-admin-list details", (ds) => ds.forEach((d) => { d.open = true; }));
+  await pp.waitForSelector(".remove-device", { timeout: 15000 });
+  await pp.$eval(".remove-device", (el) => el.click());
+  await pp.waitForSelector('.modal [data-act="ok"]', { timeout: 10000 });
+  await pp.click('.modal [data-act="ok"]');
+  await pp.waitForFunction(() => document.querySelectorAll(".remove-device").length === 0, { timeout: 15000 });
+  check("親が別の端末の登録を解除できる(端末整理)", true);
 } catch (e) {
   failures++;
   console.error("❌ E2E失敗:", e.message);
