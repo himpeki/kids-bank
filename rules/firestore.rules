@@ -22,9 +22,10 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['familyId', 'memberId', 'role'])
         && uidMatchesDevice(request.resource.data);
       allow update: if false;
-      // 端末整理: その家族の親だけが消せる
+      // 自分の登録解除(別メンバーへの切り替え時)、または端末整理でその家族の親が消せる
       allow delete: if request.auth != null
-        && get(/databases/$(database)/documents/families/$(resource.data.familyId)/devices/$(request.auth.uid)).data.role == 'parent';
+        && (request.auth.uid == uid
+          || get(/databases/$(database)/documents/families/$(resource.data.familyId)/devices/$(request.auth.uid)).data.role == 'parent');
     }
 
     function uidMatchesDevice(d) {
@@ -133,7 +134,8 @@ service cloud.firestore {
           (bootstrapping() && request.auth.uid == uid && request.resource.data.role == 'parent')
           || registrationValid(uid);
         allow update: if false;
-        allow delete: if isParent();
+        // 自分の登録解除(別メンバーへの切り替え時)、または親の端末整理
+        allow delete: if isParent() || request.auth.uid == uid;
       }
 
       function inviteData(token) {

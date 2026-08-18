@@ -526,6 +526,39 @@ describe("端末登録", () => {
       token: "inv-mama-once", role: "parent", memberId: "mama", consume: true,
     }));
   });
+
+  it("端末は自分の登録を解除できるが、他人の登録は解除できない(親を除く)", async () => {
+    const deleteRegs = (db, uid) => {
+      const b = writeBatch(db);
+      b.delete(fdoc(db, "devices", uid));
+      b.delete(doc(db, "uids", uid));
+      return b.commit();
+    };
+    // 子が兄弟の登録を消すのは拒否
+    await assertFails(deleteRegs(as(UID.taro), UID.jiro));
+    // 未登録UIDが他人の登録を消すのも拒否
+    await assertFails(deleteRegs(as(UID.stranger), UID.taro));
+    // 自分自身の登録解除は成功
+    await assertSucceeds(deleteRegs(as(UID.taro), UID.taro));
+    // 親は端末整理として他の端末を消せる
+    await assertSucceeds(deleteRegs(as(UID.papa), UID.jiro));
+  });
+
+  it("登録済み端末の別メンバーへの切り替え: 上書きは拒否・解除→再登録は成功", async () => {
+    const db = as(UID.taro);
+    // 上書き(既存 devices/uids への set)は拒否されること
+    await assertFails(registerBatch(db, UID.taro, {
+      token: "inv-taro-card", role: "child", memberId: "taro",
+    }));
+    // クライアント実装のミラー: 自分の登録を外してから登録し直す
+    const del = writeBatch(db);
+    del.delete(fdoc(db, "devices", UID.taro));
+    del.delete(doc(db, "uids", UID.taro));
+    await assertSucceeds(del.commit());
+    await assertSucceeds(registerBatch(db, UID.taro, {
+      token: "inv-taro-card", role: "child", memberId: "taro",
+    }));
+  });
 });
 
 // ================================================================

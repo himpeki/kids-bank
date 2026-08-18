@@ -37,7 +37,7 @@
       <h1 id="welcome-name">...</h1>
       <p id="welcome-role" class="muted"></p>
       <div class="card" style="text-align:left">
-        <p>この スマホ・タブレットを <b id="welcome-name2"></b> の たんまつとして とうろくするよ。いいかな?</p>
+        <p id="confirm-msg">この スマホ・タブレットを <b id="welcome-name2"></b> の たんまつとして とうろくするよ。いいかな?</p>
       </div>
       <button id="register-btn" class="btn btn-primary btn-big">とうろくする!</button>
     </div>
@@ -86,16 +86,21 @@
     async function main() {
       if (!famId || !token) return fail("カードのじょうほうが たりないよ。QRコードを もういちど よみこんでね。");
 
-      // すでにこの端末が登録済みならそのまま入場
       const existing = await resolveIdentity().catch(() => null);
-      if (existing && existing.familyId === famId) {
+      const invSnap = await getDoc(doc(db, "families", famId, "invites", token)).catch(() => null);
+      const inv = invSnap?.exists() ? invSnap.data() : null;
+
+      // 登録済み端末: 同じメンバーのカード再スキャン(や招待が読めない場合)はそのまま入場。
+      // 別メンバーの有効な招待を開いた場合だけ、下の「きりかえ」確認に進む
+      if (
+        existing && existing.familyId === famId
+        && (!inv || (inv.memberId === existing.memberId && inv.role === existing.role))
+      ) {
         location.replace(existing.role === "child" ? "./child.html" : "./parent.html");
         return;
       }
 
-      const invSnap = await getDoc(doc(db, "families", famId, "invites", token)).catch(() => null);
-      if (!invSnap || !invSnap.exists()) return fail("しょうたいけんが見つからないよ。おうちの人に そうだんしてね。");
-      const inv = invSnap.data();
+      if (!inv) return fail("しょうたいけんが見つからないよ。おうちの人に そうだんしてね。");
       if (inv.revoked) return fail("このしょうたいけんは 使えなくなっているよ。おうちの人に そうだんしてね。");
       if (inv.expiresAt && inv.expiresAt.toDate() < new Date()) return fail("しょうたいけんの きげんが きれているよ。おうちの人に あたらしいものを もらってね。");
 
@@ -108,6 +113,24 @@
       } catch { /* 未登録端末は members を読めない場合がある */ }
 
       destination = inv.role === "child" ? "./child.html" : "./parent.html";
+
+      // 別メンバーとして登録済みの端末: 誤操作で登録が変わらないよう必ず確認を挟む
+      // (登録ボタンを押すと、いまの登録を外してから新しいメンバーとして登録し直す)
+      if (existing) {
+        let oldName = "とうろくずみのメンバー";
+        try {
+          const oldSnap = await getDoc(doc(db, "families", existing.familyId, "members", existing.memberId));
+          if (oldSnap.exists()) oldName = oldSnap.data().name;
+        } catch { /* 読めなければ汎用表示のまま */ }
+        document.getElementById("welcome-name").textContent = "たんまつの きりかえ";
+        document.getElementById("welcome-role").textContent = `とうろくの しゅるい: ${ROLE_LABELS[inv.role] ?? inv.role}`;
+        document.getElementById("confirm-msg").innerHTML =
+          `この たんまつは いま <b>${esc(oldName)}</b> の たんまつだよ。<br>` +
+          `<b>${esc(name || ROLE_LABELS[inv.role] || "メンバー")}</b> の たんまつに きりかえる?`;
+        document.getElementById("register-btn").textContent = "きりかえる!";
+        show("confirm");
+        return;
+      }
 
       // 子のカード(再利用可トークン)は確認なしで自動登録し、そのままホームへ。
       // 親・祖父母用の1回限りリンクは誤って開いた瞬間に消費されないよう確認を挟む

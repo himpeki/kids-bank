@@ -468,6 +468,21 @@ try {
   });
   check("くろむらさきテーマ(黒基調・お金カードも黒系)が子画面に反映", darkBg);
   await cp.screenshot({ path: `${SHOT_DIR}/child-night.png` });
+
+  // ============ 11. 登録済み端末の切り替え(親端末で子カードを開く) ============
+  // 自動登録はされず確認画面になり、「きりかえる!」で子端末として登録し直せる
+  await pp.goto(invites[0], { waitUntil: "networkidle2" });
+  await pp.waitForSelector("#confirm:not(.hidden)", { timeout: 15000 });
+  const switchMsg = await pp.$eval("#confirm-msg", (el) => el.textContent);
+  check("親端末で子カードを開くと自動登録されず確認が出る", switchMsg.includes("きりかえる"));
+  await pp.$eval("#register-btn", (el) => el.click());
+  await pp.waitForSelector("#done:not(.hidden)", { timeout: 20000 });
+  await pp.$eval("#go-btn", (el) => el.click());
+  await pp.waitForFunction(
+    () => document.getElementById("my-name")?.textContent === "たろう",
+    { timeout: 20000 },
+  );
+  check("きりかえ実行 → 子ホーム(たろう)として開く", true);
 } catch (e) {
   failures++;
   console.error("❌ E2E失敗:", e.message);

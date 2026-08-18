@@ -96,6 +96,20 @@ export async function registerWithInvite(famId, token) {
   if (inv.expiresAt && inv.expiresAt.toDate() < new Date()) {
     throw new Error("しょうたいけんの きげんが切れています。おうちの人にそうだんしてね。");
   }
+
+  // 別メンバーとして登録済みの端末は、先に自分の登録を外す(切り替え)。
+  // ルール上 devices/uids は上書き不可のため delete → create の2段階で行う。
+  // 招待の有効性は上で確認済みなので、外したあとの再登録が失敗する余地は小さい
+  // (万一失敗しても、カードの再スキャンでいつでも登録し直せる)
+  const uidSnap = await getDoc(uidRef(user.uid));
+  if (uidSnap.exists()) {
+    const old = uidSnap.data();
+    const del = writeBatch(db);
+    del.delete(doc(db, "families", old.familyId, "devices", user.uid));
+    del.delete(uidRef(user.uid));
+    await del.commit();
+  }
+
   const batch = writeBatch(db);
   batch.set(doc(db, "families", famId, "devices", user.uid), {
     memberId: inv.memberId,
