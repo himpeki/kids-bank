@@ -130,6 +130,16 @@
           <input type="text" id="new-ticket-desc" placeholder="説明" maxlength="60" style="margin-top:8px">
           <button id="new-ticket-btn" class="btn btn-ok btn-sm" style="margin-top:8px">発行</button>
         </details>
+        <details style="margin-top:10px">
+          <summary>🎁 券テンプレートの管理(「おくりもの」と誕生日セットの選択肢)</summary>
+          <div id="tpreset-admin-list" style="margin-top:8px"></div>
+          <div class="row" style="margin-top:8px">
+            <input type="text" id="new-tpreset-emoji" placeholder="絵文字" maxlength="4" style="max-width:90px">
+            <input type="text" id="new-tpreset-title" placeholder="券の名前" maxlength="30">
+          </div>
+          <input type="text" id="new-tpreset-desc" placeholder="説明(ひらがな推奨)" maxlength="60" style="margin-top:8px">
+          <button id="new-tpreset-btn" class="btn btn-ok btn-sm" style="margin-top:8px">追加</button>
+        </details>
       </div>
       <div class="card">
         <h3>⭐ おてつだいクエスト単価表</h3>
@@ -254,6 +264,7 @@
     const onDevicesChange = () => { if (!uiReady) return; renderMemberAdmin(); };
     const onQuestsChange = () => { if (!uiReady) return; renderQuestAdmin(); };
     const onRewardsChange = () => { if (!uiReady) return; renderRewardAdmin(); };
+    const onTicketPresetsChange = () => { if (!uiReady) return; renderTicketPresetAdmin(); refreshGiftPresetSelect(); };
 
     const members = new Map();
     const imagesCache = new Map(); // 家族限定のカスタム画像(アバター・背景・きせかえ候補)
@@ -262,10 +273,13 @@
     const invitesCache = new Map(); // 親のみ購読
     const devicesCache = new Map(); // 親のみ購読(端末整理用)
 
+    const ticketPresetsCache = new Map(); // 券テンプレート(おくりもの・誕生日セットの選択肢)
+
     const firstLoads = [
       watchCol(famCol("members"), members, onMembersChange),
       watchCol(famCol("images"), imagesCache, onImagesChange),
       watchCol(famCol("quests"), questsCache, onQuestsChange),
+      watchCol(famCol("ticketPresets"), ticketPresetsCache, onTicketPresetsChange),
     ];
     if (!isGiver) {
       firstLoads.push(
@@ -309,6 +323,16 @@
         console.error(err);
         toast(`保存できませんでした: ${err.message}`, "error");
       });
+    }
+
+    // 既存家族への移行: 券テンプレートが未作成なら組み込みプリセットを登録する
+    // (IDを固定してあるので、複数の親端末が同時に実行しても二重にならない)
+    if (!isGiver && ticketPresetsCache.size === 0) {
+      const seed = writeBatch(db);
+      TICKET_PRESETS.forEach((t, i) => {
+        seed.set(famDoc("ticketPresets", `tp-seed-${i}`), { ...t, active: true, sort: i });
+      });
+      bgWrite(seed.commit());
     }
 
     // ---------- タブ ----------
@@ -478,9 +502,21 @@
     // ---------- おくりもの ----------
     const giftToEl = document.getElementById("gift-to"); // 中身は refreshMemberSelects が入れる
     const presetEl = document.getElementById("gift-preset");
-    presetEl.innerHTML =
-      TICKET_PRESETS.map((p, i) => `<option value="${i}">${p.emoji} ${p.title}</option>`).join("") +
-      '<option value="custom">✏️ じぶんで作る</option>';
+    // 有効な券テンプレートを選択肢にする(管理タブの編集が即反映される)
+    function activeTicketPresets() {
+      return [...ticketPresetsCache.entries()]
+        .filter(([, p]) => p.active !== false)
+        .sort((a, b) => (a[1].sort ?? 0) - (b[1].sort ?? 0));
+    }
+    function refreshGiftPresetSelect() {
+      const cur = presetEl.value;
+      presetEl.innerHTML =
+        activeTicketPresets()
+          .map(([id, p]) => `<option value="${id}">${esc(p.emoji ?? "🎫")} ${esc(p.title)}</option>`).join("") +
+        '<option value="custom">✏️ じぶんで作る</option>';
+      if ([...presetEl.options].some((o) => o.value === cur)) presetEl.value = cur;
+      document.getElementById("gift-custom").classList.toggle("hidden", presetEl.value !== "custom");
+    }
     presetEl.addEventListener("change", () => {
       document.getElementById("gift-custom").classList.toggle("hidden", presetEl.value !== "custom");
     });
@@ -511,7 +547,9 @@
               };
               if (!ticket.title) return toast("券の名前を入れてください", "error");
             } else {
-              ticket = TICKET_PRESETS[parseInt(presetEl.value, 10)];
+              const p = ticketPresetsCache.get(presetEl.value);
+              if (!p) return toast("券をえらんでください", "error");
+              ticket = { emoji: p.emoji ?? "🎫", title: p.title, desc: p.desc ?? "" };
             }
             await sendTicketGift({ fromMemberId: ident.memberId, toMemberId, ticket, message });
           } else {
@@ -599,18 +637,21 @@
 
     document.getElementById("birthday-set").addEventListener("click", async (e) => {
       const memberId = document.getElementById("ticket-member").value;
+      // 発行内容 = 有効な券テンプレート(管理はこのタブの「券テンプレートの管理」から)
+      const items = activeTicketPresets().map(([, p]) => p);
+      if (!items.length) return toast("有効な券テンプレートがありません", "error");
       const ok = await confirmModal({
         title: "たんじょうびセットを発行しますか?",
-        body: `${esc(mName(memberId))} に ${TICKET_PRESETS.length}枚の券を発行します。<br>` +
-          TICKET_PRESETS.map((p) => `${p.emoji} ${esc(p.title)}`).join("<br>"),
+        body: `${esc(mName(memberId))} に ${items.length}枚の券を発行します。<br>` +
+          items.map((p) => `${esc(p.emoji ?? "🎫")} ${esc(p.title)}`).join("<br>"),
         okLabel: "発行する",
       });
       if (!ok) return;
       await withBusy(e.target, async () => {
         const batch = writeBatch(db);
-        for (const p of TICKET_PRESETS) {
+        for (const p of items) {
           batch.set(doc(famCol("tickets"), "tk" + shortId()), {
-            memberId, emoji: p.emoji, title: p.title, desc: p.desc,
+            memberId, emoji: p.emoji ?? "🎫", title: p.title, desc: p.desc ?? "",
             status: "unused", approvalId: null,
             createdByUid: ident.uid, createdAt: serverTimestamp(), usedAt: null,
           });
@@ -686,6 +727,63 @@
       // 入力を即クリアする(連打で二重登録になるのも防げる)
       document.getElementById("new-quest-title").value = "";
       document.getElementById("new-quest-points").value = "";
+    });
+
+    // ---------- 券テンプレート管理(親のみ) ----------
+    function renderTicketPresetAdmin() {
+      const items = [...ticketPresetsCache.entries()].sort((a, b) => (a[1].sort ?? 0) - (b[1].sort ?? 0));
+      document.getElementById("tpreset-admin-list").innerHTML = items.map(([id, p]) => `
+        <div class="list-item" data-id="${id}">
+          <span>${esc(p.emoji ?? "🎫")}</span>
+          <div class="li-main">${esc(p.title)}
+            ${p.active !== false ? "" : '<span class="muted">[停止中]</span>'}</div>
+          <button class="btn btn-ghost btn-sm edit-tpreset" data-id="${id}">編集</button>
+          <button class="btn btn-ghost btn-sm toggle-tpreset" data-id="${id}" data-active="${p.active !== false}">
+            ${p.active !== false ? "停止" : "再開"}</button>
+        </div>`).join("") || '<p class="muted">テンプレートがありません</p>';
+    }
+    document.getElementById("tpreset-admin-list").addEventListener("click", (e) => {
+      if (e.target.classList.contains("toggle-tpreset")) {
+        bgWrite(updateDoc(famDoc("ticketPresets", e.target.dataset.id), { active: e.target.dataset.active !== "true" }));
+      }
+      if (e.target.classList.contains("edit-tpreset")) {
+        const p = ticketPresetsCache.get(e.target.dataset.id);
+        const item = e.target.closest(".list-item");
+        item.innerHTML = `
+          <div style="flex:1">
+            <div class="row">
+              <input class="et-emoji" value="${esc(p.emoji ?? "🎫")}" maxlength="4" style="max-width:70px">
+              <input class="et-title" value="${esc(p.title)}" maxlength="30">
+            </div>
+            <input class="et-desc" value="${esc(p.desc ?? "")}" maxlength="60" placeholder="説明" style="margin-top:6px">
+          </div>
+          <button class="btn btn-ok btn-sm save-tpreset" data-id="${item.dataset.id}">保存</button>
+          <button class="btn btn-ghost btn-sm cancel-tpreset-edit">✕</button>`;
+      }
+      if (e.target.classList.contains("cancel-tpreset-edit")) renderTicketPresetAdmin();
+      if (e.target.classList.contains("save-tpreset")) {
+        const item = e.target.closest(".list-item");
+        const title = item.querySelector(".et-title").value.trim();
+        if (!title) return toast("券の名前を入れてください", "error");
+        bgWrite(updateDoc(famDoc("ticketPresets", e.target.dataset.id), {
+          title,
+          emoji: item.querySelector(".et-emoji").value.trim() || "🎫",
+          desc: item.querySelector(".et-desc").value.trim(),
+        }), "保存しました");
+      }
+    });
+    document.getElementById("new-tpreset-btn").addEventListener("click", () => {
+      const title = document.getElementById("new-tpreset-title").value.trim();
+      if (!title) return toast("券の名前を入れてください", "error");
+      bgWrite(setDoc(doc(famCol("ticketPresets"), "tp" + shortId()), {
+        emoji: document.getElementById("new-tpreset-emoji").value.trim() || "🎫",
+        title,
+        desc: document.getElementById("new-tpreset-desc").value.trim(),
+        active: true,
+        sort: ticketPresetsCache.size,
+      }), "追加しました");
+      document.getElementById("new-tpreset-title").value = "";
+      document.getElementById("new-tpreset-desc").value = "";
     });
 
     // ---------- ごほうびショップ管理(親のみ) ----------
@@ -1040,10 +1138,12 @@
     // 以降は各購読が変更のたびに再描画する
     uiReady = true;
     refreshMemberSelects();
+    refreshGiftPresetSelect();
     renderKidCards();
     if (!isGiver) {
       renderQuestAdmin();
       renderRewardAdmin();
+      renderTicketPresetAdmin();
     }
     showTab(location.hash.slice(1) || "home");
   </script>

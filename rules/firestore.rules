@@ -545,6 +545,16 @@ service cloud.firestore {
         allow delete: if isParent();
       }
 
+      // ---------- ギフト券テンプレート(おくりもの・誕生日セットの選択肢) ----------
+      match /ticketPresets/{presetId} {
+        allow read: if isMember();
+        allow create, update: if isParent()
+          && request.resource.data.title is string
+          && request.resource.data.title.size() >= 1
+          && request.resource.data.title.size() <= 60;
+        allow delete: if isParent();
+      }
+
       // ---------- サプライズギフト ----------
       match /gifts/{giftId} {
         allow read: if isMember();

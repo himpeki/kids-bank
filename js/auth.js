@@ -14,7 +14,7 @@ import {
   shortId,
 } from "./db.js";
 import { DEFAULT_SETTINGS } from "./config.js";
-import { QUEST_PRESETS, REWARD_PRESETS } from "./presets.js";
+import { QUEST_PRESETS, REWARD_PRESETS, TICKET_PRESETS } from "./presets.js";
 
 // 身元キャッシュのキー。index.html の高速パス(インラインスクリプト)も同じキーを
 // 直書きで参照しているので、変えるときは両方直すこと
@@ -223,6 +223,13 @@ export async function createFamily({ setupKey, familyName, selfName, members }) 
   REWARD_PRESETS.forEach((r, i) => {
     batch2.set(doc(db, "families", famId, "rewards", "r" + shortId()), {
       ...r,
+      active: true,
+      sort: i,
+    });
+  });
+  TICKET_PRESETS.forEach((t, i) => {
+    batch2.set(doc(db, "families", famId, "ticketPresets", `tp-seed-${i}`), {
+      ...t,
       active: true,
       sort: i,
     });

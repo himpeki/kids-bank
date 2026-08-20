@@ -95,6 +95,27 @@ try {
   );
   check("クエスト編集(みずやり 5pt → 7pt)", true);
 
+  // ============ 2.6 親: 券テンプレート編集がおくりものの選択肢に反映 ============
+  await pp.$$eval("#tab-manage details", (ds) => ds.forEach((d) => { d.open = true; }));
+  await pp.waitForFunction(
+    () => document.querySelectorAll("#tpreset-admin-list .list-item").length >= 6,
+    { timeout: 15000 },
+  );
+  await pp.$eval("#tpreset-admin-list .edit-tpreset", (el) => el.click());
+  await pp.waitForSelector("#tpreset-admin-list .et-title");
+  await pp.$eval("#tpreset-admin-list .et-title", (el) => { el.value = ""; });
+  await pp.type("#tpreset-admin-list .et-title", "たからものけん");
+  await pp.$eval("#tpreset-admin-list .save-tpreset", (el) => el.click());
+  await pp.waitForFunction(
+    () => document.querySelector("#tpreset-admin-list").textContent.includes("たからものけん"),
+    { timeout: 15000 },
+  );
+  const giftOptions = await pp.$$eval("#gift-preset option", (els) => els.map((o) => o.textContent));
+  check(
+    "券テンプレート編集が「おくりもの」の選択肢に反映",
+    giftOptions.some((t) => t.includes("たからものけん")) && giftOptions.length >= 7,
+  );
+
   // ============ 2.7 親: カスタム画像アップロード(家族限定) ============
   await pp.evaluate(() => { location.hash = "#settings"; });
   await pp.waitForSelector("#image-file", { timeout: 15000 });

@@ -489,6 +489,30 @@ describe("算数チャレンジ", () => {
 });
 
 // ================================================================
+describe("券テンプレート(おくりもの・誕生日セットの選択肢)", () => {
+  it("家族は読め、親だけが書ける", async () => {
+    await raw((db) => setDoc(fdoc(db, "ticketPresets", "tp1"), {
+      emoji: "🚗", title: "おでかけけん", desc: "", active: true, sort: 0,
+    }));
+    await assertSucceeds(getDoc(fdoc(as(UID.taro), "ticketPresets", "tp1")));
+    await assertSucceeds(setDoc(fdoc(as(UID.papa), "ticketPresets", "tp2"), {
+      emoji: "🍦", title: "アイスけん", desc: "", active: true, sort: 1,
+    }));
+    await assertSucceeds(updateDoc(fdoc(as(UID.papa), "ticketPresets", "tp1"), { title: "たからものけん" }));
+    // 子・giver・未登録は書けない
+    await assertFails(setDoc(fdoc(as(UID.taro), "ticketPresets", "tp3"), {
+      emoji: "🎮", title: "ずるけん", desc: "", active: true, sort: 2,
+    }));
+    await assertFails(updateDoc(fdoc(as(UID.jiji), "ticketPresets", "tp1"), { title: "x" }));
+    await assertFails(deleteDoc(fdoc(as(UID.taro), "ticketPresets", "tp1")));
+    // タイトル必須
+    await assertFails(setDoc(fdoc(as(UID.papa), "ticketPresets", "tp4"), {
+      emoji: "🎫", title: "", active: true, sort: 3,
+    }));
+  });
+});
+
+// ================================================================
 describe("端末登録", () => {
   const registerBatch = (db, uid, { token, role, memberId, consume = false }) => {
     const b = writeBatch(db);
