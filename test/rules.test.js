@@ -468,9 +468,23 @@ describe("算数チャレンジ", () => {
     await assertFails(quizBatch(as(UID.taro), UID.taro, "taro", { amount: 100, newPt: 200 }));
   });
 
-  it("20時間以内の再取得は拒否", async () => {
+  it("同じ日(日本時間)の再取得は拒否、日付が変われば取得できる", async () => {
+    // 1回目は成功 → 直後(同じ日)の2回目は拒否
     await assertSucceeds(quizBatch(as(UID.taro), UID.taro, "taro", { amount: 5, newPt: 105 }));
     await assertFails(quizBatch(as(UID.taro), UID.taro, "taro", { amount: 5, newPt: 110, txnId: "t-q2" }));
+
+    const jstMidnightMs =
+      Math.floor((Date.now() + 9 * 3600 * 1000) / 86400000) * 86400000 - 9 * 3600 * 1000;
+    // 前日23:59(JST)にクリア済み → 日付が変わっているので取得できる
+    await raw((db) => updateDoc(fdoc(db, "wallets", "taro"), {
+      lastQuizAt: Timestamp.fromMillis(jstMidnightMs - 60000), pt: 100, lastTxnId: "",
+    }));
+    await assertSucceeds(quizBatch(as(UID.taro), UID.taro, "taro", { amount: 5, newPt: 105, txnId: "t-q3" }));
+    // 今日0:30(JST)にクリア済み → 同じ日なので拒否
+    await raw((db) => updateDoc(fdoc(db, "wallets", "taro"), {
+      lastQuizAt: Timestamp.fromMillis(jstMidnightMs + 30 * 60000), pt: 100, lastTxnId: "",
+    }));
+    await assertFails(quizBatch(as(UID.taro), UID.taro, "taro", { amount: 5, newPt: 105, txnId: "t-q4" }));
   });
 });
 

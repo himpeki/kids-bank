@@ -279,14 +279,20 @@ service cloud.firestore {
           && (amount + 1) * 10000 > pt * settingsData().weeklyRateBp;
       }
 
-      // 算数チャレンジ: 20時間に1回、settings の固定ボーナスのみ
+      // 日本時間(UTC+9)の暦日を単調増加のキーにする(year/month/day はUTC基準のため+9時間)
+      function jstDayKey(ts) {
+        let j = ts + duration.value(9, 'h');
+        return j.year() * 512 + j.month() * 32 + j.day();
+      }
+
+      // 算数チャレンジ: 1日1回(日本時間の0時リセット)、settings の固定ボーナスのみ
       function childQuiz(m, b, a, t) {
         return t.type == 'quiz' && m == myMemberId() && t.toMemberId == m
           && t.currency == 'pt'
           && t.amount == settingsData().quizBonusPt
           && a.diff(b).affectedKeys().hasOnly(['pt', 'lastTxnId', 'lastQuizAt'])
           && a.pt == b.pt + t.amount
-          && b.lastQuizAt <= request.time - duration.value(20, 'h')
+          && jstDayKey(b.lastQuizAt) < jstDayKey(request.time)
           && a.lastQuizAt == request.time
           && t.balanceAfter.to == a.pt;
       }

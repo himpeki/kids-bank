@@ -825,8 +825,10 @@
     // ---------- 算数チャレンジ ----------
     document.getElementById("quiz-q").textContent = quiz.question;
     function updateQuizAvailability() {
+      // 1日1回、日本時間の0時にリセット(ルール側の jstDayKey と同じ判定)
+      const jstDayOf = (ms) => Math.floor((ms + 9 * 3600 * 1000) / 86400000);
       const last = wallet.lastQuizAt?.toMillis?.() ?? 0;
-      const ready = Date.now() - last >= 20 * 3600 * 1000;
+      const ready = jstDayOf(last) < jstDayOf(Date.now());
       // クリア済みの日は問題と回答欄を隠してカードを小さくする
       document.getElementById("quiz-q").classList.toggle("hidden", !ready);
       document.getElementById("quiz-form").classList.toggle("hidden", !ready);
